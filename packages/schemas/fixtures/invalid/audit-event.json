@@ -1,0 +1,11 @@
+{
+  "id": "audit_01hz3xk321",
+  "who": {
+    "principal": { "kind": "agent", "id": "agentdef_01hz3x9k2v" }
+  },
+  "what": "send",
+  "scope": { "level": "workspace", "id": "workspace_9f2a1c" },
+  "when": "2026-07-09T02:14:05.000Z",
+  "outcome": "maybe",
+  "refs": {}
+}

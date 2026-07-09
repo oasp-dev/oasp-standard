@@ -1,0 +1,9 @@
+{
+  "id": "deploy_01hz3xab12",
+  "agentDefinitionId": "agentdef_01hz3x9k2v",
+  "provider": "anthropic",
+  "providerAgentId": "agent_5f8e2d914c",
+  "environmentId": "env_production",
+  "providerVersion": "2026-05-01",
+  "canonicalHash": "sha256:9c1b1e6a3f7d4e2b8a0c5f6d7e8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a"
+}

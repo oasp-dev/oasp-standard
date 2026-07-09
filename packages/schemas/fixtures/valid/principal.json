@@ -1,0 +1,15 @@
+{
+  "id": "user_3b7c9d",
+  "kind": "user",
+  "identity": {
+    "subject": "auth0|64f2a1b9c8d7e6f5",
+    "issuer": "https://lucidbrain.us.auth0.com/",
+    "displayName": "Priya Shah",
+    "email": "priya@example.com"
+  },
+  "scopeMemberships": [
+    { "level": "workspace", "id": "workspace_9f2a1c" },
+    { "level": "tenant", "id": "tenant_01" }
+  ],
+  "roles": ["workspace-admin"]
+}

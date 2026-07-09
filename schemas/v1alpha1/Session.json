@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.oasp.dev/v1alpha1/Session.json",
+  "title": "Session",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique identifier of this Session."
+    },
+    "pinnedAgentVersion": {
+      "description": "The immutable AgentDefinition version this Session was created against.",
+      "$ref": "#/$defs/AgentVersionRef"
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "file",
+                "description": "Discriminant identifying this as a mounted file."
+              },
+              "fileId": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Identifier of the file mounted into this session."
+              }
+            },
+            "required": [
+              "type",
+              "fileId"
+            ],
+            "additionalProperties": false,
+            "description": "A single file mounted into the session at create."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "memory_store",
+                "description": "Discriminant identifying this as a mounted memory store."
+              },
+              "storeId": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Opaque identifier of the memory store mounted into this session."
+              }
+            },
+            "required": [
+              "type",
+              "storeId"
+            ],
+            "additionalProperties": false,
+            "description": "An opaque mounted memory store. v0 treats memory as an opaque resource; see Decisions taken."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "github_repository",
+                "description": "Discriminant identifying this as a mounted GitHub repository."
+              },
+              "owner": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Owner (user or organization) of the mounted repository."
+              },
+              "repo": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Name of the mounted repository."
+              },
+              "ref": {
+                "description": "Branch, tag, or commit SHA to mount; if absent, the provider mounts the default branch.",
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "type",
+              "owner",
+              "repo"
+            ],
+            "additionalProperties": false,
+            "description": "A GitHub repository mounted into the session at create."
+          }
+        ]
+      },
+      "description": "Resources mounted into the session at create: files, memory stores, and/or GitHub repositories."
+    },
+    "vaultIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Identifiers of the Credentials attached to this session, matched to MCP servers by URL at creation."
+    }
+  },
+  "required": [
+    "id",
+    "pinnedAgentVersion",
+    "resources",
+    "vaultIds"
+  ],
+  "additionalProperties": false,
+  "description": "A provider execution context, pinned to one agent version, disposable and replaceable.",
+  "$defs": {
+    "AgentVersionRef": {
+      "type": "object",
+      "properties": {
+        "agentDefinitionId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier of the pinned AgentDefinition."
+        },
+        "version": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "description": "The specific, immutable version number of the AgentDefinition being pinned."
+        }
+      },
+      "required": [
+        "agentDefinitionId",
+        "version"
+      ],
+      "additionalProperties": false,
+      "description": "A pin to one immutable version of an AgentDefinition."
+    }
+  }
+}

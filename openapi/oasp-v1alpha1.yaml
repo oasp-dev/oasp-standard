@@ -1,0 +1,986 @@
+openapi: 3.1.0
+info:
+  title: OASP — Open Agent Session Protocol (v0)
+  version: v1alpha1
+components:
+  schemas:
+    AgentDefinition:
+      type: object
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Unique identifier of this AgentDefinition.
+        name:
+          type: string
+          minLength: 1
+          description: Human-readable name of the agent.
+        instructions:
+          type: string
+          description: The agent's system prompt / instructions, verbatim.
+        provider:
+          description: The provider this Definition targets when deployed.
+          $ref: "#/components/schemas/Provider"
+        model:
+          type: string
+          minLength: 1
+          description: The provider's model identifier (e.g. a Claude model name).
+        tools:
+          type: array
+          items:
+            oneOf:
+              - type: object
+                properties:
+                  type:
+                    type: string
+                    const: builtin_toolset
+                    description: Discriminant identifying this as a builtin toolset grant.
+                  toolset:
+                    type: string
+                    enum:
+                      - coding
+                      - search
+                      - files
+                    description: Which provider-hosted builtin toolset is granted to the agent.
+                required:
+                  - type
+                  - toolset
+                additionalProperties: false
+                description: Grants one of the provider-hosted builtin toolsets (coding, search,
+                  files).
+              - type: object
+                properties:
+                  type:
+                    type: string
+                    const: custom
+                    description: Discriminant identifying this as a custom tool definition.
+                  name:
+                    type: string
+                    minLength: 1
+                    description: Unique name of the custom tool, as the model will call it.
+                  description:
+                    type: string
+                    minLength: 1
+                    description: Description of the custom tool shown to the model to guide when and
+                      how it is invoked.
+                  inputSchema:
+                    type: object
+                    propertyNames:
+                      type: string
+                    additionalProperties: {}
+                    description: JSON Schema (as a plain object) describing the custom tool's input
+                      shape.
+                required:
+                  - type
+                  - name
+                  - description
+                  - inputSchema
+                additionalProperties: false
+                description: Defines a custom, non-MCP tool the agent may call.
+              - type: object
+                properties:
+                  type:
+                    type: string
+                    const: mcp
+                    description: Discriminant identifying this as an MCP server grant.
+                  serverUrl:
+                    type: string
+                    format: uri
+                    description: URL of the MCP server exposing the tool(s).
+                  label:
+                    type: string
+                    minLength: 1
+                    description: Human-readable label for this MCP server in tool pickers and logs.
+                  auth:
+                    type: string
+                    enum:
+                      - none
+                      - credential
+                    description: Whether this MCP server requires no authentication, or is matched
+                      to a Credential by serverUrl at session creation.
+                  permissionPolicy:
+                    type: string
+                    enum:
+                      - always_allow
+                      - always_ask
+                    description: Whether tool calls to this server run without confirmation, or
+                      require per-call approval.
+                  toolAllowlist:
+                    description: If present, restricts usable tools on this server to this list; if
+                      absent, every tool the server exposes is usable.
+                    type: array
+                    items:
+                      type: string
+                      minLength: 1
+                required:
+                  - type
+                  - serverUrl
+                  - label
+                  - auth
+                  - permissionPolicy
+                additionalProperties: false
+                description: Grants access to tools exposed by a remote MCP server, matched to a
+                  Credential by serverUrl at session creation.
+          description: "The tools available to the agent: builtin toolsets, custom tools,
+            or MCP server grants."
+        guardrails:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          description: Opaque v0 guardrail identifiers/policy names applied to the agent.
+            Structure beyond a name is left to profiles until two
+            implementations interoperate on guardrail internals.
+        draftVersion:
+          type: integer
+          exclusiveMinimum: 0
+          maximum: 9007199254740991
+          description: The draft head version number. Every edit to the Definition
+            advances this.
+        publishedVersion:
+          anyOf:
+            - type: integer
+              exclusiveMinimum: 0
+              maximum: 9007199254740991
+            - type: "null"
+          description: The version number live conversations pin to. Null if this
+            Definition has never been published; otherwise only advanced by the
+            explicit publish interaction.
+        scope:
+          description: The generalized-ownership attachment point this Definition belongs
+            to.
+          $ref: "#/components/schemas/Scope"
+      required:
+        - id
+        - name
+        - instructions
+        - provider
+        - model
+        - tools
+        - guardrails
+        - draftVersion
+        - publishedVersion
+        - scope
+      additionalProperties: false
+      description: The canonical, provider-neutral definition of an agent.
+    Provider:
+      type: string
+      enum:
+        - anthropic
+        - openai
+        - google
+      description: Agent-hosting provider. `anthropic` is the reference adapter;
+        `openai` and `google` are reserved by name for future adapters.
+    Scope:
+      type: object
+      properties:
+        level:
+          type: string
+          enum:
+            - tenant
+            - workspace
+            - user
+            - group
+            - role
+          description: Which level of the tenant/workspace/user/group/role taxonomy this
+            attachment point is at.
+        id:
+          type: string
+          minLength: 1
+          description: Identifier of the scoped entity (the tenant id, workspace id, user
+            id, group id, or role id).
+      required:
+        - level
+        - id
+      additionalProperties: false
+      description: "A generalized-ownership attachment point: a taxonomy level plus
+        the identifier at that level."
+    Deployment:
+      type: object
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Unique identifier of this Deployment.
+        agentDefinitionId:
+          type: string
+          minLength: 1
+          description: Identifier of the AgentDefinition this Deployment materializes.
+        provider:
+          description: The provider this Definition was deployed to.
+          $ref: "#/components/schemas/Provider"
+        providerAgentId:
+          type: string
+          minLength: 1
+          description: The provider's own identifier for the materialized agent.
+        environmentId:
+          type: string
+          minLength: 1
+          description: Identifier of the environment this Deployment was created in.
+        providerVersion:
+          type: string
+          minLength: 1
+          description: The provider's own version tag for the materialized agent, distinct
+            from the Definition's version pointers.
+        canonicalHash:
+          type: string
+          minLength: 1
+          description: Hash of the Definition's canonical (post-normalization) form at
+            deploy time. Two deploy calls against a Definition that hashes the
+            same are idempotent — the existing Deployment is reused rather than
+            re-materialized.
+      required:
+        - id
+        - agentDefinitionId
+        - provider
+        - providerAgentId
+        - environmentId
+        - providerVersion
+        - canonicalHash
+      additionalProperties: false
+      description: A materialization of an AgentDefinition at a specific provider and
+        environment, idempotent by canonicalHash.
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Unique identifier of this Conversation.
+        scope:
+          description: The generalized-ownership attachment point this Conversation
+            belongs to.
+          $ref: "#/components/schemas/Scope"
+        initiatingPrincipal:
+          description: The Principal that started this Conversation.
+          $ref: "#/components/schemas/PrincipalRef"
+        currentSessionId:
+          type: string
+          minLength: 1
+          description: Identifier of the Session this Conversation currently rides on.
+        pinnedAgentVersion:
+          description: The immutable AgentDefinition version the current session was
+            minted against.
+          $ref: "#/components/schemas/AgentVersionRef"
+        previousSessionIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          description: Identifiers of every Session this Conversation has ridden on before
+            the current one, oldest first — the lineage `migrate` appends to on
+            each session upgrade.
+      required:
+        - id
+        - scope
+        - initiatingPrincipal
+        - currentSessionId
+        - pinnedAgentVersion
+        - previousSessionIds
+      additionalProperties: false
+      description: The durable thread that survives across the disposable provider
+        Sessions it rides on.
+    PrincipalKind:
+      type: string
+      enum:
+        - user
+        - service
+        - agent
+      description: "The kind of acting party: a human user, a machine-to-machine
+        service, or an agent acting on its own."
+    PrincipalRef:
+      type: object
+      properties:
+        kind:
+          description: The kind of principal being referenced.
+          $ref: "#/components/schemas/PrincipalKind"
+        id:
+          type: string
+          minLength: 1
+          description: Identifier of the referenced Principal resource.
+      required:
+        - kind
+        - id
+      additionalProperties: false
+      description: A pointer to a Principal by kind and id, without embedding its full
+        claims-contract record.
+    AgentVersionRef:
+      type: object
+      properties:
+        agentDefinitionId:
+          type: string
+          minLength: 1
+          description: Identifier of the pinned AgentDefinition.
+        version:
+          type: integer
+          exclusiveMinimum: 0
+          maximum: 9007199254740991
+          description: The specific, immutable version number of the AgentDefinition being
+            pinned.
+      required:
+        - agentDefinitionId
+        - version
+      additionalProperties: false
+      description: A pin to one immutable version of an AgentDefinition.
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Unique identifier of this Session.
+        pinnedAgentVersion:
+          description: The immutable AgentDefinition version this Session was created
+            against.
+          $ref: "#/components/schemas/AgentVersionRef"
+        resources:
+          type: array
+          items:
+            oneOf:
+              - type: object
+                properties:
+                  type:
+                    type: string
+                    const: file
+                    description: Discriminant identifying this as a mounted file.
+                  fileId:
+                    type: string
+                    minLength: 1
+                    description: Identifier of the file mounted into this session.
+                required:
+                  - type
+                  - fileId
+                additionalProperties: false
+                description: A single file mounted into the session at create.
+              - type: object
+                properties:
+                  type:
+                    type: string
+                    const: memory_store
+                    description: Discriminant identifying this as a mounted memory store.
+                  storeId:
+                    type: string
+                    minLength: 1
+                    description: Opaque identifier of the memory store mounted into this session.
+                required:
+                  - type
+                  - storeId
+                additionalProperties: false
+                description: An opaque mounted memory store. v0 treats memory as an opaque
+                  resource; see Decisions taken.
+              - type: object
+                properties:
+                  type:
+                    type: string
+                    const: github_repository
+                    description: Discriminant identifying this as a mounted GitHub repository.
+                  owner:
+                    type: string
+                    minLength: 1
+                    description: Owner (user or organization) of the mounted repository.
+                  repo:
+                    type: string
+                    minLength: 1
+                    description: Name of the mounted repository.
+                  ref:
+                    description: Branch, tag, or commit SHA to mount; if absent, the provider mounts
+                      the default branch.
+                    type: string
+                    minLength: 1
+                required:
+                  - type
+                  - owner
+                  - repo
+                additionalProperties: false
+                description: A GitHub repository mounted into the session at create.
+          description: "Resources mounted into the session at create: files, memory
+            stores, and/or GitHub repositories."
+        vaultIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          description: Identifiers of the Credentials attached to this session, matched to
+            MCP servers by URL at creation.
+      required:
+        - id
+        - pinnedAgentVersion
+        - resources
+        - vaultIds
+      additionalProperties: false
+      description: A provider execution context, pinned to one agent version,
+        disposable and replaceable.
+    Event:
+      oneOf:
+        - type: object
+          properties:
+            id:
+              type: string
+              minLength: 1
+              description: Opaque, order-comparable identifier for this event within its
+                session stream. Used as the listSessionEvents pagination cursor
+                and to establish the event ordering conformant adapters must
+                preserve.
+            at:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+              description: Timestamp the event was emitted, as an ISO 8601 date-time. A UTC
+                `Z` designator or a numeric zone offset (e.g. `+12:00`) is
+                accepted, so implementations in any timezone can emit
+                locally-offset timestamps.
+            type:
+              type: string
+              const: assistant_message_start
+              description: "Discriminant: the start of a new assistant message."
+            messageId:
+              type: string
+              minLength: 1
+              description: Identifier of the assistant message beginning.
+          required:
+            - id
+            - at
+            - type
+            - messageId
+          additionalProperties: false
+          description: Marks the start of a new assistant message.
+        - type: object
+          properties:
+            id:
+              type: string
+              minLength: 1
+              description: Opaque, order-comparable identifier for this event within its
+                session stream. Used as the listSessionEvents pagination cursor
+                and to establish the event ordering conformant adapters must
+                preserve.
+            at:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+              description: Timestamp the event was emitted, as an ISO 8601 date-time. A UTC
+                `Z` designator or a numeric zone offset (e.g. `+12:00`) is
+                accepted, so implementations in any timezone can emit
+                locally-offset timestamps.
+            type:
+              type: string
+              const: assistant_message_text
+              description: "Discriminant: an incremental text chunk of an assistant message."
+            messageId:
+              type: string
+              minLength: 1
+              description: Identifier of the assistant message this text chunk belongs to.
+            delta:
+              type: string
+              description: The incremental text content of this chunk.
+          required:
+            - id
+            - at
+            - type
+            - messageId
+            - delta
+          additionalProperties: false
+          description: An incremental text chunk of an in-progress assistant message.
+        - type: object
+          properties:
+            id:
+              type: string
+              minLength: 1
+              description: Opaque, order-comparable identifier for this event within its
+                session stream. Used as the listSessionEvents pagination cursor
+                and to establish the event ordering conformant adapters must
+                preserve.
+            at:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+              description: Timestamp the event was emitted, as an ISO 8601 date-time. A UTC
+                `Z` designator or a numeric zone offset (e.g. `+12:00`) is
+                accepted, so implementations in any timezone can emit
+                locally-offset timestamps.
+            type:
+              type: string
+              const: assistant_message_end
+              description: "Discriminant: the end of an assistant message."
+            messageId:
+              type: string
+              minLength: 1
+              description: Identifier of the assistant message ending.
+          required:
+            - id
+            - at
+            - type
+            - messageId
+          additionalProperties: false
+          description: Marks the end of an assistant message.
+        - type: object
+          properties:
+            id:
+              type: string
+              minLength: 1
+              description: Opaque, order-comparable identifier for this event within its
+                session stream. Used as the listSessionEvents pagination cursor
+                and to establish the event ordering conformant adapters must
+                preserve.
+            at:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+              description: Timestamp the event was emitted, as an ISO 8601 date-time. A UTC
+                `Z` designator or a numeric zone offset (e.g. `+12:00`) is
+                accepted, so implementations in any timezone can emit
+                locally-offset timestamps.
+            type:
+              type: string
+              const: assistant_thinking
+              description: "Discriminant: an incremental extended-thinking chunk."
+            delta:
+              type: string
+              description: The incremental thinking content of this chunk.
+          required:
+            - id
+            - at
+            - type
+            - delta
+          additionalProperties: false
+          description: An incremental chunk of the assistant's extended thinking.
+        - type: object
+          properties:
+            id:
+              type: string
+              minLength: 1
+              description: Opaque, order-comparable identifier for this event within its
+                session stream. Used as the listSessionEvents pagination cursor
+                and to establish the event ordering conformant adapters must
+                preserve.
+            at:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+              description: Timestamp the event was emitted, as an ISO 8601 date-time. A UTC
+                `Z` designator or a numeric zone offset (e.g. `+12:00`) is
+                accepted, so implementations in any timezone can emit
+                locally-offset timestamps.
+            type:
+              type: string
+              const: custom_tool_use
+              description: "Discriminant: an invocation of a custom (non-builtin, non-MCP)
+                tool."
+            toolUseId:
+              type: string
+              minLength: 1
+              description: Identifier correlating this tool use to its eventual result.
+            name:
+              type: string
+              minLength: 1
+              description: Name of the custom tool being invoked.
+            input:
+              type: object
+              propertyNames:
+                type: string
+              additionalProperties: {}
+              description: The input arguments passed to the custom tool.
+          required:
+            - id
+            - at
+            - type
+            - toolUseId
+            - name
+            - input
+          additionalProperties: false
+          description: An invocation of a custom tool defined on the AgentDefinition.
+        - type: object
+          properties:
+            id:
+              type: string
+              minLength: 1
+              description: Opaque, order-comparable identifier for this event within its
+                session stream. Used as the listSessionEvents pagination cursor
+                and to establish the event ordering conformant adapters must
+                preserve.
+            at:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+              description: Timestamp the event was emitted, as an ISO 8601 date-time. A UTC
+                `Z` designator or a numeric zone offset (e.g. `+12:00`) is
+                accepted, so implementations in any timezone can emit
+                locally-offset timestamps.
+            type:
+              type: string
+              const: builtin_tool_use
+              description: "Discriminant: an invocation of a provider-hosted builtin tool."
+            toolUseId:
+              type: string
+              minLength: 1
+              description: Identifier correlating this tool use to its eventual result.
+            name:
+              type: string
+              minLength: 1
+              description: Name of the builtin tool being invoked.
+            input:
+              type: object
+              propertyNames:
+                type: string
+              additionalProperties: {}
+              description: The input arguments passed to the builtin tool.
+          required:
+            - id
+            - at
+            - type
+            - toolUseId
+            - name
+            - input
+          additionalProperties: false
+          description: An invocation of a provider-hosted builtin tool.
+        - type: object
+          properties:
+            id:
+              type: string
+              minLength: 1
+              description: Opaque, order-comparable identifier for this event within its
+                session stream. Used as the listSessionEvents pagination cursor
+                and to establish the event ordering conformant adapters must
+                preserve.
+            at:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+              description: Timestamp the event was emitted, as an ISO 8601 date-time. A UTC
+                `Z` designator or a numeric zone offset (e.g. `+12:00`) is
+                accepted, so implementations in any timezone can emit
+                locally-offset timestamps.
+            type:
+              type: string
+              const: status
+              description: "Discriminant: a session status transition."
+            status:
+              type: string
+              enum:
+                - running
+                - idle
+                - error
+              description: The session's new status.
+          required:
+            - id
+            - at
+            - type
+            - status
+          additionalProperties: false
+          description: A transition in the session's status.
+        - type: object
+          properties:
+            id:
+              type: string
+              minLength: 1
+              description: Opaque, order-comparable identifier for this event within its
+                session stream. Used as the listSessionEvents pagination cursor
+                and to establish the event ordering conformant adapters must
+                preserve.
+            at:
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+              description: Timestamp the event was emitted, as an ISO 8601 date-time. A UTC
+                `Z` designator or a numeric zone offset (e.g. `+12:00`) is
+                accepted, so implementations in any timezone can emit
+                locally-offset timestamps.
+            type:
+              type: string
+              const: error
+              description: "Discriminant: an error condition."
+            message:
+              type: string
+              minLength: 1
+              description: Human-readable description of the error.
+            recoverable:
+              type: boolean
+              description: Whether the session can continue after this error (e.g. via drain)
+                or is terminally failed.
+          required:
+            - id
+            - at
+            - type
+            - message
+            - recoverable
+          additionalProperties: false
+          description: An error condition encountered while executing the session.
+      description: A normalised session-stream event, discriminated by `type`.
+    Principal:
+      type: object
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Unique identifier of this Principal.
+        kind:
+          description: "The kind of acting party: a human user, a service, or an agent."
+          $ref: "#/components/schemas/PrincipalKind"
+        identity:
+          type: object
+          properties:
+            subject:
+              type: string
+              minLength: 1
+              description: Stable subject identifier for this principal, mappable to an OIDC
+                `sub` claim.
+            issuer:
+              description: Identifier of the asserting identity provider, mappable to an OIDC
+                `iss` claim.
+              type: string
+              minLength: 1
+            displayName:
+              description: Human-readable display name, if asserted by the identity provider.
+              type: string
+              minLength: 1
+            email:
+              description: Email address, if asserted by the identity provider.
+              type: string
+              format: email
+              pattern: ^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$
+          required:
+            - subject
+          additionalProperties: false
+          description: The IdP-agnostic, OIDC-mappable claims-contract identity assertion.
+        scopeMemberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/Scope"
+          description: The scopes this principal is a member of, used to resolve
+            most-specific-scope-wins.
+        roles:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          description: IdP-agnostic role names asserted for this principal, independent of
+            scope membership.
+      required:
+        - id
+        - kind
+        - identity
+        - scopeMemberships
+        - roles
+      additionalProperties: false
+      description: "A first-class identity: the acting party behind every agent action."
+    Credential:
+      type: object
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Unique identifier of this Credential.
+        provider:
+          description: The provider whose vault holds the referenced secret.
+          $ref: "#/components/schemas/Provider"
+        vaultId:
+          type: string
+          minLength: 1
+          description: Reference into the provider's own secret vault. The secret itself
+            is never stored here.
+        mcpServerUrl:
+          type: string
+          format: uri
+          description: URL of the MCP server this Credential is matched to at session
+            creation.
+        scope:
+          description: The generalized-ownership attachment point this Credential is
+            pinned to.
+          $ref: "#/components/schemas/Scope"
+        onBehalfOf:
+          description: If present, restricts this Credential to use on behalf of this
+            specific Principal.
+          $ref: "#/components/schemas/PrincipalRef"
+      required:
+        - id
+        - provider
+        - vaultId
+        - mcpServerUrl
+        - scope
+      additionalProperties: false
+      description: A provider-side vault reference, scope-pinned and matched to MCP
+        servers by URL.
+    AuditEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Unique identifier of this AuditEvent.
+        who:
+          type: object
+          properties:
+            principal:
+              description: The Principal that performed the interaction.
+              $ref: "#/components/schemas/PrincipalRef"
+            onBehalfOf:
+              description: If the principal acted on behalf of another party (e.g. an
+                assistant acting as a member), that party.
+              $ref: "#/components/schemas/PrincipalRef"
+          required:
+            - principal
+          additionalProperties: false
+          description: The acting principal, and the party it acted on behalf of, if any.
+        what:
+          type: string
+          enum:
+            - publish
+            - migrate
+            - drain
+            - stream
+            - send
+            - sendToolResult
+          description: Which v0 interaction this AuditEvent records.
+        scope:
+          description: The generalized-ownership attachment point the interaction occurred
+            within.
+          $ref: "#/components/schemas/Scope"
+        when:
+          type: string
+          format: date-time
+          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+          description: Timestamp the interaction occurred, as an ISO 8601 date-time. A UTC
+            `Z` designator or a numeric zone offset (e.g. `+12:00`) is accepted,
+            so audit records from any timezone verify against the published
+            schema.
+        outcome:
+          type: string
+          enum:
+            - success
+            - failure
+          description: Whether the interaction succeeded or failed.
+        refs:
+          type: object
+          properties:
+            sessionId:
+              description: Identifier of the Session involved, if any.
+              type: string
+              minLength: 1
+            conversationId:
+              description: Identifier of the Conversation involved, if any.
+              type: string
+              minLength: 1
+            definitionId:
+              description: Identifier of the AgentDefinition involved, if any.
+              type: string
+              minLength: 1
+          additionalProperties: false
+          description: References to the session, conversation, and/or definition involved.
+      required:
+        - id
+        - who
+        - what
+        - scope
+        - when
+        - outcome
+        - refs
+      additionalProperties: false
+      description: The normative audit record emitted for every mutating interaction.
+paths:
+  /agent-definitions/{id}/publish:
+    post:
+      operationId: publishAgentDefinition
+      summary: "publish — snap published_version forward to the current draft head.
+        Placeholder; full contract is Issue #2 (S1)."
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the AgentDefinition to publish.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The AgentDefinition with published_version advanced.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentDefinition"
+  /conversations/{id}/migrate:
+    post:
+      operationId: migrateConversation
+      summary: "migrate — session upgrade: mint a session at a target agent version
+        and swap it in. Placeholder; full contract is Issue #2 (S1)."
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the Conversation to migrate.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The Conversation, now riding on the newly minted session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+  /sessions/{id}/drain:
+    post:
+      operationId: drainSession
+      summary: "drain — recover a session parked on pending tool calls. Placeholder;
+        full contract is Issue #2 (S1)."
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the Session to drain.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The Session, returned to idle.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+  /sessions/{id}/events:
+    get:
+      operationId: streamSessionEvents
+      summary: "stream — SSE of normalised events until idle/unrecoverable.
+        Placeholder; full contract is Issue #2 (S1)."
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the Session to stream events from.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A stream of normalised session events.
+          content:
+            text/event-stream:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Event"
+  /sessions/{id}/messages:
+    post:
+      operationId: sendMessage
+      summary: "send — post a message to the session. Placeholder; full contract is
+        Issue #2 (S1)."
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the Session to send the message to.
+          schema:
+            type: string
+      responses:
+        "202":
+          description: The message was accepted for processing.
+  /sessions/{id}/tool-results:
+    post:
+      operationId: sendToolResult
+      summary: "sendToolResult — post a custom tool result to the session.
+        Placeholder; full contract is Issue #2 (S1)."
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the Session to post the tool result to.
+          schema:
+            type: string
+      responses:
+        "202":
+          description: The tool result was accepted for processing.

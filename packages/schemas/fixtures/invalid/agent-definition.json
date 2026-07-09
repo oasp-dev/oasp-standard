@@ -1,0 +1,12 @@
+{
+  "id": "agentdef_01hz3x9k2v",
+  "name": "LucidBrain Workspace Assistant",
+  "instructions": "You are the LucidBrain workspace assistant.",
+  "provider": "openai-legacy",
+  "model": "claude-opus-4-6",
+  "tools": [],
+  "guardrails": [],
+  "draftVersion": 1,
+  "publishedVersion": null,
+  "scope": { "level": "workspace", "id": "workspace_9f2a1c" }
+}
