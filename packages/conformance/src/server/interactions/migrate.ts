@@ -45,7 +45,7 @@ import { runDrainToIdle } from './run-drain-to-idle';
  * view" — read here as: internal primitive use by a MUST-run
  * sub-step is not itself a separately-audited client-facing
  * invocation). A stricter reading of "MUST emit... for every
- * invocation of each of the six interactions" could conclude the
+ * invocation of each of the seven interactions" could conclude the
  * opposite; this is a genuine ambiguity the spec text does not close.
  */
 export async function migrateInteraction(
@@ -149,12 +149,17 @@ export async function migrateInteraction(
     // Stage 3 — drain to idle before the new session is exposed as currentSessionId.
     const drainResult = await runDrainToIdle(provider, toolExecutor, newSession.id);
     if (!drainResult.ok) {
+      // The new Session — and its vaultIds — genuinely exist at this point
+      // (createSession above already succeeded); only drain failed
+      // afterward. refs.credentialIds therefore still names what was
+      // actually re-attached, unlike the createSession-failure branch
+      // above, where no Session (and so no attachment) exists at all.
       emitAuditEvent(state, clock, {
         who: buildAuditWho(caller),
         what: 'migrate',
         scope: conversation.scope,
         outcome: 'failure',
-        refs: { conversationId, sessionId: newSession.id },
+        refs: { conversationId, sessionId: newSession.id, credentialIds: [...vaultIds] },
       });
       return err(drainResult.error);
     }
@@ -170,12 +175,17 @@ export async function migrateInteraction(
     };
     state.conversations.set(conversationId, updatedConversation);
 
+    // refs.credentialIds names which Credentials were re-attached at Stage 1
+    // — docs/spec/audit.md § Credential attachment is audited
+    // (`createConversation` and `migrate`): the migrate case previously
+    // recorded THAT credentials were re-attached (an emission point
+    // existed); this now also names WHICH.
     emitAuditEvent(state, clock, {
       who: buildAuditWho(caller),
       what: 'migrate',
       scope: updatedConversation.scope,
       outcome: 'success',
-      refs: { conversationId, sessionId: newSession.id },
+      refs: { conversationId, sessionId: newSession.id, credentialIds: [...vaultIds] },
     });
 
     return ok(updatedConversation);

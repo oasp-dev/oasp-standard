@@ -1,9 +1,12 @@
 # OASP Specification — Index
 
 Normative behavioural specification for OASP v0: the Conversation ≠
-Session model and the six interactions that operate over it
-(`publish`, `migrate`, `drain`, `stream`, `send`, `sendToolResult`) —
-S1, [issue #2](https://github.com/FieldstateNZ/oasp-standard/issues/2)
+Session model and the seven interactions that operate over it
+(`publish`, `createConversation`, `migrate`, `drain`, `stream`, `send`,
+`sendToolResult`) — S1,
+[issue #2](https://github.com/FieldstateNZ/oasp-standard/issues/2),
+extended by S4 ([issue #5](https://github.com/FieldstateNZ/oasp-standard/issues/5))
+to add `createConversation` and close the credential-attach audit gap
 — the identity and audit layer underneath them: scope resolution,
 the `Principal` claims contract, on-behalf-of / scope-pinning, and the
 normative `AuditEvent` required-emission set — S2,
@@ -30,7 +33,7 @@ also logged in this slice's handback to the dev lead.
 | Document | Covers |
 |---|---|
 | [`conversation-and-session.md`](./conversation-and-session.md) | The structural insight: Conversation ≠ Session, the warp/weft framing, the `previousSessionIds` lineage. Read this first — every interaction below falls out of it. |
-| [`interactions.md`](./interactions.md) | `publish`, `migrate`, `drain`, `stream`, `send`, `sendToolResult` — full normative behaviour, including sequence diagrams for publish→migrate and drain-on-reopen. |
+| [`interactions.md`](./interactions.md) | `publish`, `createConversation`, `migrate`, `drain`, `stream`, `send`, `sendToolResult` — full normative behaviour, including sequence diagrams for publish→migrate and drain-on-reopen. |
 | [`target-version-resolution.md`](./target-version-resolution.md) | The normative table resolving which `AgentDefinition` version a given session context targets when `migrate` runs. |
 | [`scope-and-identity.md`](./scope-and-identity.md) | S2. Scope taxonomy and resolution (most-specific-scope-wins), the profile-override mechanism, the `Principal` claims contract (IdP-agnostic, OIDC-mappable), and the on-behalf-of / scope-pinning containment rule. |
 | [`audit.md`](./audit.md) | S2. The normative minimum `AuditEvent` shape, the required-emission set reconciled against the landed `what` enum, the conformance test ("what did the agent do as {principal} on {date}"), and the emission-vs-delivery/storage/retention boundary. |

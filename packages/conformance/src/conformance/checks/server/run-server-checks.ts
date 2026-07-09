@@ -258,7 +258,7 @@ async function checkCreateConversationRejectsNeverPublishedDefinition(server: Re
 }
 
 /**
- * Drives a `ReferenceServer` through the six interactions and asserts
+ * Drives a `ReferenceServer` through the seven interactions and asserts
  * the normative behaviours `docs/spec/interactions.md` requires:
  * version pinning preserved, lineage append-only oldest-first across
  * repeated migrations, migrate non-compounding (measured via the true

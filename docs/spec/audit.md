@@ -13,6 +13,12 @@
 > [`auditEventSchema`](../../packages/schemas/src/resources/audit-event.ts)
 > / [`AuditEvent.json`](../../schemas/v1alpha1/AuditEvent.json)
 > ([issue #1](https://github.com/FieldstateNZ/oasp-standard/issues/1)).
+> Extended by S4 ([issue #5](https://github.com/FieldstateNZ/oasp-standard/issues/5))
+> to add `createConversation` to the required-emission set and
+> `refs.credentialIds` to the normative shape, closing the
+> credential-attach gap this document originally tracked as open — see
+> [Credential attachment is audited](#credential-attachment-is-audited-createconversation-and-migrate)
+> below.
 
 FHIR `AuditEvent` is the prior art and the posture this standard
 inherits: an implementation that cannot answer *"what did the agent do
@@ -35,11 +41,12 @@ are individually optional (`refs: {}` is a valid value — see
 | `id` | `string`, min length 1 | Unique identifier of this `AuditEvent`. |
 | `who.principal` | `PrincipalRef` (**MUST** be present) | "The Principal that performed the interaction." |
 | `who.onBehalfOf` | `PrincipalRef` (optional) | "If the principal acted on behalf of another party (e.g. an assistant acting as a member), that party." **MUST** be present whenever the interaction was performed on behalf of another `Principal` per [scope-and-identity.md's containment rule](./scope-and-identity.md#on-behalf-of-and-scope-pinning-the-containment-rule); **MUST** be omitted otherwise (there is no "no attribution pin" sentinel value — absence is the sentinel, confirmed by `audit-event.test.ts`). |
-| `what` | enum: `publish \| migrate \| drain \| stream \| send \| sendToolResult` | "Which v0 interaction this AuditEvent records." See [Required-emission set](#required-emission-set-conformance-must) below — this enum *is* the required-emission set. |
+| `what` | enum: `publish \| createConversation \| migrate \| drain \| stream \| send \| sendToolResult` | "Which v0 interaction this AuditEvent records." See [Required-emission set](#required-emission-set-conformance-must) below — this enum *is* the required-emission set. |
 | `scope` | `Scope` (**MUST** be present) | "The generalized-ownership attachment point the interaction occurred within," populated per [Scope provenance](#scope-provenance-normative) below (this is the scope the interaction *occurred within*, not the output of the principal-membership resolution algorithm). |
 | `when` | ISO 8601 date-time, offset required | Timestamp the interaction occurred. A `Z` designator or a numeric zone offset is accepted (see the schema's own field description); a bare date with no time component is rejected (`audit-event.test.ts`: "rejects a when that is not an ISO 8601 date-time"). |
 | `outcome` | enum: `success \| failure` | Whether the interaction succeeded or failed. |
 | `refs.sessionId` / `refs.conversationId` / `refs.definitionId` | each `string`, min length 1, optional | "References to the session, conversation, and/or definition involved" — each populated only when that resource is relevant to the interaction (e.g. `publish` touches a `definitionId` but no `sessionId`). |
+| `refs.credentialIds` | `string[]`, each entry min length 1, optional | "Identifiers of the Credentials attached/used in this interaction, so the trail names which credential — not just that one was attached." Populated on `createConversation` (credentials attached at initial creation) and `migrate` (credentials re-attached at Stage 1) — the two points in v0 where `Session.vaultIds` is resolved (see [`credentialSchema`](../../packages/schemas/src/resources/credential.ts)). Omitted, or an empty array, when an interaction attaches no credential. |
 
 A conformant server **MUST** populate every top-level required field
 for each emitted `AuditEvent`. `refs`' individual sub-fields **SHOULD**
@@ -64,6 +71,7 @@ primary resource the interaction concerns:
 | `what` | `scope` **MUST** be |
 |---|---|
 | `publish` | the target `AgentDefinition`'s `scope`. |
+| `createConversation` | the newly created `Conversation`'s own `scope` (the caller-supplied `scope` the Conversation is created with). |
 | `migrate` | the target `Conversation`'s `scope`. |
 | `send` / `sendToolResult` / `drain` / `stream` on a Session bound to a `Conversation` | that `Conversation`'s `scope`. |
 | `send` / `sendToolResult` / `drain` / `stream` on a builder / test-session (no `Conversation`) | the `scope` of the `AgentDefinition` version the Session is pinned to (`Session.pinnedAgentVersion` → `AgentDefinition.scope`). |
@@ -77,10 +85,10 @@ test-session.
 ## Required-emission set (conformance MUST)
 
 **A conformant server MUST emit exactly one `AuditEvent` for every
-invocation of each of the six interactions carrying a `what` value in
+invocation of each of the seven interactions carrying a `what` value in
 `auditEventSchema`'s enum:**
 
-`publish`, `migrate`, `drain`, `stream`, `send`, `sendToolResult`.
+`publish`, `createConversation`, `migrate`, `drain`, `stream`, `send`, `sendToolResult`.
 
 This list is closed and schema-authoritative: per
 [`README.md`'s field-naming convention](./README.md#field-naming-convention)
@@ -93,7 +101,8 @@ value's emission point is already specified, per-interaction, in
 | `what` | Interaction | `refs` populated | Audit line (interactions.md) |
 |---|---|---|---|
 | `publish` | [`publish`](./interactions.md#publish) | `definitionId` | `AuditEvent{ what: 'publish', refs: { definitionId } }` |
-| `migrate` | [`migrate`](./interactions.md#migrate-session-upgrade) | `conversationId`, `sessionId` | `AuditEvent{ what: 'migrate', refs: { conversationId, sessionId } }`, emitted whether Stage 2 completed via full transcript seed or degrade-to-fresh-start |
+| `createConversation` | [`createConversation`](./interactions.md#createconversation) | `conversationId`, `sessionId`, `credentialIds` | `AuditEvent{ what: 'createConversation', refs: { conversationId, sessionId, credentialIds } }` — the initial-creation credential-attach emission point; see [Credential attachment is audited](#credential-attachment-is-audited-createconversation-and-migrate) below |
+| `migrate` | [`migrate`](./interactions.md#migrate-session-upgrade) | `conversationId`, `sessionId`, `credentialIds` (when a Session is minted) | `AuditEvent{ what: 'migrate', refs: { conversationId, sessionId, credentialIds } }`, emitted whether Stage 2 completed via full transcript seed or degrade-to-fresh-start. `credentialIds` is populated only when a new Session is actually minted (its `vaultIds` re-resolved); it is omitted on the "leave in place" no-op and on any pre-mint failure, where nothing was re-attached |
 | `drain` | [`drain`](./interactions.md#drain) | `sessionId` | `AuditEvent{ what: 'drain', refs: { sessionId } }` |
 | `stream` | [`stream`](./interactions.md#stream) | `sessionId` | `AuditEvent{ what: 'stream', refs: { sessionId } }` — a read path, audited anyway; see [Reconciling](#reconciling-the-issues-prose-against-the-what-enum) below |
 | `send` | [`send`](./interactions.md#send) | `sessionId` | `AuditEvent{ what: 'send', refs: { sessionId } }` |
@@ -114,78 +123,114 @@ predates — and doesn't exactly match — the landed
 | "drain" | `drain` | Direct match. |
 | "send" | `send` | Direct match. `sendToolResult` — not separately named in the issue's prose, but present in the enum, [specified in interactions.md](./interactions.md#sendtoolresult) as its own auditable interaction, and covered under "tool execution" below — is included in the required set on schema authority regardless. |
 | "tool execution" | `drain` **and** `sendToolResult` | `drain`'s normative behaviour *is* executing pending tool calls and posting results: "For each blocking tool use, the server **MUST** execute it and **MUST** post its result back to the Session (via `sendToolResult`)" ([interactions.md § drain](./interactions.md#drain)). `sendToolResult` is "the same primitive `drain` uses internally... A client posting a tool result directly, and `drain` posting one on a client's behalf, are the same operation from the server's point of view" ([interactions.md § sendToolResult](./interactions.md#sendtoolresult)). So "tool execution" maps to the union of both — which are already independently required by the enum. |
-| "credential attach" | **no corresponding `what` value** | See [The credential-attach gap](#the-credential-attach-gap-flagged-for-the-dev-lead) below. |
+| "credential attach" | `createConversation` **and** `migrate` (via `refs.credentialIds`) | Closed by S4 ([issue #5](https://github.com/FieldstateNZ/oasp-standard/issues/5)). See [Credential attachment is audited](#credential-attachment-is-audited-createconversation-and-migrate) below — this row previously read "no corresponding `what` value." |
 | *(not named by the issue)* | `stream` | Schema-authoritative inclusion despite the issue's prose omitting it. `stream` is a read path; it is audited anyway per the FHIR `AuditEvent` posture this standard inherits — "what did the agent do (**or have observed of it**) as {member} on {date}," not only "what changed" (verbatim from [interactions.md's forward-reference note](./interactions.md#interactions), consistent with S1). |
+| *(not named by the issue)* | `createConversation` | Added by S4 specifically to close the "credential attach" row above — the interaction issue #3's prose implied but that did not exist anywhere in v0 at the time. |
 
-The **required-emission set is therefore the full six-value enum** —
-`publish | migrate | drain | stream | send | sendToolResult` — not the
-issue's five-item prose list. The enum is authoritative; the prose is
-reconciled onto it above, term-by-term, with one unmapped remainder.
+The **required-emission set is therefore the full seven-value enum** —
+`publish | createConversation | migrate | drain | stream | send |
+sendToolResult` — not the issue's five-item prose list. The enum is
+authoritative; the prose is reconciled onto it above, term-by-term.
+Issue #3's one unmapped remainder — "credential attach" — is no longer
+unmapped: S4 ([issue #5](https://github.com/FieldstateNZ/oasp-standard/issues/5))
+closed it by landing `createConversation` and `refs.credentialIds`
+together; see
+[Credential attachment is audited](#credential-attachment-is-audited-createconversation-and-migrate)
+immediately below, which replaces what this document used to carry as
+"The credential-attach gap."
 
-### The credential-attach gap (flagged for the dev lead)
+### Credential attachment is audited (`createConversation` and `migrate`)
+
+> **Status: closed by S4** ([issue #5](https://github.com/FieldstateNZ/oasp-standard/issues/5)).
+> This section previously tracked "The credential-attach gap" as a
+> tracked, v0-release-blocking open item. It no longer is one. The
+> history and reasoning below are preserved because they explain *why*
+> the fix takes the shape it does; only the disposition has changed,
+> from open to resolved.
 
 The issue names *"credential attach"* as a required-emission target.
-There is **no `what` enum value for it**, and per this slice's
-constraints, no new value is invented and
-[`audit-event.ts`](../../packages/schemas/src/resources/audit-event.ts)
-is not touched.
-
-The gap is broader than "credential attach" specifically. Per
-[`credentialSchema`](../../packages/schemas/src/resources/credential.ts),
+Per [`credentialSchema`](../../packages/schemas/src/resources/credential.ts),
 credential attachment happens **at Session creation** — a `Credential`
 is "resolved at session creation by matching its `mcpServerUrl` against
 the tool grant's `serverUrl`, and attached to that Session's
 `vaultIds`." Session creation occurs in exactly two normative contexts
-in v0:
+in v0, and both are now audited, and both now name *which* `Credential`:
 
-1. **As Stage 1 of `migrate`** — re-resolving `vaultIds` against the
+1. **The first Session a brand-new `Conversation` ever rides on** —
+   [`createConversation`](./interactions.md#createconversation). Before
+   S4, this had **no** corresponding interaction anywhere in the v0
+   set — neither [`docs/oasp-v0-concept.md` § Interactions (v0)](../oasp-v0-concept.md#interactions-v0)
+   nor [`interactions.md`](./interactions.md) named a
+   `createConversation` / `createSession` interaction at all, so there
+   was no `what` value to attach an initial-attachment `AuditEvent` to.
+   S4 adds `createConversation` to close exactly that: every
+   `AuditEvent{ what: 'createConversation' }` carries
+   `refs.credentialIds`, naming every `Credential` resolved into the
+   new Session's `vaultIds` at creation — the **first** credential
+   attachment of every `Conversation`, now audited and named.
+2. **Stage 1 of `migrate`** — re-resolving `vaultIds` against the
    target version's `mcp` tool grants ([interactions.md § Stage 1](./interactions.md#stage-1--mint-session-at-target-version)).
-   Here the migrate **event** fires — the `migrate` `AuditEvent` covers
+   The `migrate` `AuditEvent` already had an emission point before S4 —
    the whole operation, of which minting the Session and attaching its
-   `vaultIds` is one stage — but the credential **identity is not
-   audited**: `AuditEvent.refs` carries only `sessionId` /
-   `conversationId` / `definitionId` and **no** credential/vault
-   reference (see [`auditEventSchema`](../../packages/schemas/src/resources/audit-event.ts)),
-   so *which* `Credential` was attached is not recoverable from the
-   trail. The occurrence has an emission point (`what: 'migrate'`); the
-   "which credential, when" question a health-sector auditor asks does
-   not — see the release-blocking item below.
-2. **The first Session a brand-new `Conversation` ever rides on** —
-   this has **no** corresponding interaction anywhere in the v0 set.
-   Neither [`docs/oasp-v0-concept.md` § Interactions (v0)](../oasp-v0-concept.md#interactions-v0)
-   nor [`interactions.md`](./interactions.md) name a
-   `createConversation` / `createSession` interaction at all. So there
-   is no `what` value to attach an initial-attachment `AuditEvent` to —
-   not because "credential attach" was overlooked specifically, but
-   because *initial Session/Conversation creation as a whole* has no
-   audited interaction in v0.
+   `vaultIds` is one stage, was already covered by `what: 'migrate'`.
+   What was missing was the credential **identity**: `AuditEvent.refs`
+   carried only `sessionId` / `conversationId` / `definitionId`, no
+   credential/vault reference, so *which* `Credential` was re-attached
+   was not recoverable from the trail. S4 adds `refs.credentialIds` to
+   the `migrate` `AuditEvent` too, so the re-attach case now names
+   *which* credential exactly as the initial-attach case does — the
+   occurrence had an emission point before S4; it now also answers
+   "which credential."
 
-This is a cross-slice gap that spans the S0 schema and a not-yet-existing
-create interaction, so it cannot be closed inside this audit slice. **The
-dev lead's decision for v0:**
+**Why this required its own interaction, not a redefinition of
+`migrate` (preserved from the original analysis):** the gap was always
+broader than "credential attach" specifically — it was that *initial
+Session/Conversation creation as a whole* had no audited interaction in
+v0. Folding it into `migrate` was considered and rejected: `migrate`
+means "move an *existing* Conversation onto a new version"
+([interactions.md § migrate](./interactions.md#migrate-session-upgrade):
+its own Preconditions require "the target `Conversation` **MUST**
+exist"), and a zero-stage "migration" from nothing is not that
+operation — redefining it to cover initial creation would corrupt that
+meaning. The fix instead required two coordinated changes, landed
+together in S4: (1) [`createConversation`](./interactions.md#createconversation)
+in the interaction spec, giving initial creation an emission point to
+hang an `AuditEvent` on; and (2) `refs.credentialIds` on
+[`auditEventSchema`](../../packages/schemas/src/resources/audit-event.ts),
+so *which* credential was attached is recoverable for both
+`createConversation` and `migrate`. Neither change alone would have
+closed the gap — a `what` value with nothing to name the credential, or
+a `refs` field with no emission point to attach to on initial creation,
+would each have been half a fix.
 
-- **The required-emission set stands as the closed six-value enum**
-  (above). No new `what` value is invented and no S0 schema is edited in
-  this slice; "credential attach" is explicitly **not** folded into any
-  of the six. Redefining `migrate` to cover zero-stage session creation
-  is **rejected** — it would corrupt `migrate`'s meaning ("move onto a
-  new version") to cover a case that is not a move from anything.
-- **The initial-session-creation credential-attach gap is a tracked,
-  v0-release-blocking open item** — not a soft "revisit in v0.1." Because
-  the concept draft bills `AuditEvent` as *v0 CORE — non-negotiable* and
-  the basis of the standard's health-sector credibility, v0 cannot
-  honestly make that claim while the **first** credential attachment of
-  every `Conversation` — and initial Session creation as a whole — is
-  unaudited. Closing it requires two changes, **both outside this
-  slice**: (1) a create interaction (e.g. `createConversation` /
-  `createSession`) in the interaction spec to hang an emission point on,
-  and (2) a credential/vault reference on `AuditEvent.refs` so *which*
-  credential was attached is recoverable (the same `refs` gap the
-  migrate case above hits).
-- Until both land, the gap is documented here so it is **acknowledged
-  and tracked, never silently dropped**. It is carried in the dev lead's
-  hand-off as the one substantive open item for the standard's owner to
-  schedule as a follow-up.
+**What changed, concretely:**
+
+- **S0 schema** ([`auditEventSchema`](../../packages/schemas/src/resources/audit-event.ts)):
+  `createConversation` added to `what`'s enum; `refs.credentialIds` —
+  `string[]`, each entry min length 1, optional — added to `refs`.
+  Regenerated JSON Schema / OpenAPI, fixtures, and drift tests updated
+  alongside.
+- **S1 interaction spec** ([`interactions.md`](./interactions.md#createconversation)):
+  the `createConversation` interaction itself, its normative behaviour
+  (mount `resources[]`, resolve+attach `vaultIds[]`, pin to
+  `publishedVersion`, reject a never-published definition), and its
+  **Audit:** line.
+- **S3 conformance kit** (`@oasp/conformance`): the reference server
+  emits `AuditEvent{ what: 'createConversation' }` with
+  `refs.credentialIds` populated, populates `refs.credentialIds` on the
+  `migrate` emission too, and a portable conformance check
+  (`checks/audit/run-audit-checks.ts`) asserts both — including a
+  negative test proving the check actually fails a server that omits
+  the event, or omits `credentialIds`, rather than merely asserting the
+  happy path.
+
+The concept draft bills `AuditEvent` as *v0 CORE — non-negotiable* and
+the basis of the standard's health-sector credibility. With this
+section closed, v0 can now honestly make that claim: "which credential
+was attached, when, on whose behalf" is answerable purely from the
+emitted `AuditEvent` trail — `who.principal` / `who.onBehalfOf`, `when`,
+and `refs.credentialIds` together — for both the first attachment
+(`createConversation`) and every re-attachment (`migrate`).
 
 ## The conformance test (normative)
 
@@ -242,7 +287,10 @@ on," per that document's own forward reference to this one.
 This document is the full normative shape
 [`interactions.md`](./interactions.md)'s
 [audit forward-reference note](./interactions.md#interactions) defers
-to S2. Every interaction's **Audit:** line in that document names a
-`what` value defined here; this document does not add, remove, or
-reinterpret any of those six emission points — it specifies the shape
-those events carry and the closed set they belong to.
+to S2, extended by S4 ([issue #5](https://github.com/FieldstateNZ/oasp-standard/issues/5))
+to add `createConversation`'s emission point and close the
+credential-attach gap. Every interaction's **Audit:** line in that
+document names a `what` value defined here; outside of S4's coordinated
+addition of `createConversation`, this document does not add, remove,
+or reinterpret any of the other six emission points — it specifies the
+shape those events carry and the closed set they belong to.

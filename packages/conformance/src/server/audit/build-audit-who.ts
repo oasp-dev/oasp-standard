@@ -7,7 +7,10 @@ import type { CallerContext } from '../caller-context.types';
  * — `onBehalfOf` must be omitted entirely when absent, never present
  * with value `undefined` — so every call site needs the same
  * conditional-spread shape; centralising it here means that shape is
- * written once, not at every one of the six interactions.
+ * written once, not at every one of the six `CallerContext`-taking
+ * interactions (`createConversation`, the seventh audited interaction,
+ * builds its `who` directly from `CreateConversationInput.initiatingPrincipal`
+ * instead — see `setup/create-conversation.ts`).
  */
 export function buildAuditWho(caller: CallerContext): AuditEvent['who'] {
   return caller.onBehalfOf ? { principal: caller.principal, onBehalfOf: caller.onBehalfOf } : { principal: caller.principal };

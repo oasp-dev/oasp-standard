@@ -3,11 +3,11 @@
 > See [`docs/oasp-v0-concept.md` § The one structural insight the standard is built on](../oasp-v0-concept.md#the-one-structural-insight-the-standard-is-built-on).
 
 **A Conversation is not a Session.** Every interaction specified in
-[`interactions.md`](./interactions.md) — `publish`, `migrate`,
-`drain`, `stream`, `send`, `sendToolResult` — is a consequence of this
-one split. This document specifies the two resources and the
-invariants that hold between them; it does not itself specify the
-interactions that maintain those invariants (that's
+[`interactions.md`](./interactions.md) — `publish`, `createConversation`,
+`migrate`, `drain`, `stream`, `send`, `sendToolResult` — is a
+consequence of this one split. This document specifies the two
+resources and the invariants that hold between them; it does not
+itself specify the interactions that maintain those invariants (that's
 [`interactions.md`](./interactions.md)).
 
 ## The insight

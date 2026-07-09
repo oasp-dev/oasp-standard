@@ -824,6 +824,7 @@ components:
           type: string
           enum:
             - publish
+            - createConversation
             - migrate
             - drain
             - stream
@@ -863,8 +864,17 @@ components:
               description: Identifier of the AgentDefinition involved, if any.
               type: string
               minLength: 1
+            credentialIds:
+              description: Identifiers of the Credentials attached/used in this interaction,
+                so the trail names which credential — not just that one was
+                attached.
+              type: array
+              items:
+                type: string
+                minLength: 1
           additionalProperties: false
-          description: References to the session, conversation, and/or definition involved.
+          description: References to the session, conversation, definition, and/or
+            credentials involved.
       required:
         - id
         - who
@@ -895,6 +905,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentDefinition"
+  /conversations:
+    post:
+      operationId: createConversation
+      summary: "createConversation — mint the first Session for a new Conversation:
+        mount resources, resolve+attach vaultIds, pin to publishedVersion.
+        Placeholder; full contract is docs/spec/interactions.md §
+        createConversation (Issue #5 / S4)."
+      responses:
+        "201":
+          description: The newly created Conversation, riding on its freshly minted
+            initial Session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
   /conversations/{id}/migrate:
     post:
       operationId: migrateConversation

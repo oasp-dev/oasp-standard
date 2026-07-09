@@ -8,7 +8,7 @@ import type { ServerState } from '../store/server-state';
 /**
  * Setup helper: simulates an edit to an `AgentDefinition`'s draft,
  * advancing `draftVersion` by one — per `agentDefinitionSchema`,
- * "every edit to the Definition advances" it. Not one of the six
+ * "every edit to the Definition advances" it. Not one of the seven
  * audited interactions (editing/updating a definition's content is
  * out of the v0 interaction set entirely, same as creation), so this
  * emits no `AuditEvent`. Exists so conformance tests can construct a

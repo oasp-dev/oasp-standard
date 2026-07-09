@@ -7,7 +7,7 @@ import type { SessionContext } from '../target-version/resolve-target-version';
  * network, deterministic, CI-safe) and sufficient to prove the
  * normative behaviours the conformance suite checks — a real OASP
  * server implementation would back this with a database, but nothing
- * about the six interactions' normative behaviour depends on that.
+ * about the seven interactions' normative behaviour depends on that.
  */
 export interface ServerState {
   readonly agentDefinitions: Map<string, AgentDefinition>;

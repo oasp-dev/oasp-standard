@@ -15,9 +15,9 @@ import type { ServerState } from './store/server-state';
  * the session's FULL stored history regardless of how many
  * running/idle cycles (e.g. repeated `migrate` seedings) it spans.
  *
- * Not one of the six audited interactions: it carries no `AuditEvent`
+ * Not one of the seven audited interactions: it carries no `AuditEvent`
  * emission of its own — `docs/spec/audit.md`'s required-emission set is
- * a closed six-value enum and this is not in it — so this is a plain
+ * a closed seven-value enum and this is not in it — so this is a plain
  * observability accessor, like `getSession`/`getConversation`, that
  * happens to need the provider (not just `state`) because Event
  * history is provider-owned, never mirrored into `ServerState`.

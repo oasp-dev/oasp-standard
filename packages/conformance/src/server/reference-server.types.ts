@@ -15,13 +15,24 @@ import type { RegisterCredentialInput } from './setup/register-credential-input.
  * Everything in this interface splits into two groups:
  *
  * 1. **Setup helpers** (`createAgentDefinition`, `registerCredential`,
- *    `createConversation`, `createBuilderSession`, `createTestSession`)
- *    — not part of the six audited interactions; they exist so a test
- *    can build a scenario (an AgentDefinition, a Conversation riding
- *    on a Session) to then drive the six interactions against.
- * 2. **The six audited interactions** (`publish`, `migrate`, `drain`,
- *    `stream`, `send`, `sendToolResult`) — the normative surface this
- *    package's conformance checks exercise.
+ *    `createBuilderSession`, `createTestSession`,
+ *    `editAgentDefinitionDraft`) — not part of the seven audited
+ *    interactions; they exist so a test can build a scenario (an
+ *    AgentDefinition, a registered Credential) to then drive the seven
+ *    interactions against. `createBuilderSession` / `createTestSession`
+ *    deliberately stay unaudited setup helpers even after S4: neither
+ *    mints a durable `Conversation` (see
+ *    `docs/spec/conversation-and-session.md`), both are dev-time
+ *    scaffolding to preview/validate an `AgentDefinition` before it is
+ *    ever exposed to a real user, and nothing in the required-emission
+ *    set's boundary changes that.
+ * 2. **The seven audited interactions** (`publish`, `createConversation`,
+ *    `migrate`, `drain`, `stream`, `send`, `sendToolResult`) — the
+ *    normative surface this package's conformance checks exercise.
+ *    `createConversation` mints the first Session for a brand-new
+ *    Conversation — the emission point for that Conversation's initial
+ *    credential attachment (`docs/spec/audit.md` § Credential
+ *    attachment is audited).
  * 3. **Observability accessors** (`getAgentDefinition`, `getConversation`,
  *    `getSession`, `listAuditEvents`, `listSessionEvents`) — plain
  *    reads, none of them audited. `listSessionEvents` in particular is
@@ -40,13 +51,14 @@ import type { RegisterCredentialInput } from './setup/register-credential-input.
 export interface ReferenceServer {
   createAgentDefinition(input: CreateAgentDefinitionInput): Promise<AgentDefinition>;
   registerCredential(input: RegisterCredentialInput): Credential;
-  createConversation(input: CreateConversationInput): Promise<Result<Conversation, DomainError>>;
   createBuilderSession(agentDefinitionId: string, resources?: Session['resources']): Promise<Result<Session, DomainError>>;
   createTestSession(agentDefinitionId: string, resources?: Session['resources']): Promise<Result<Session, DomainError>>;
-  /** Simulates a draft edit (advances `draftVersion` by one). Not one of the six audited interactions — see `setup/edit-agent-definition-draft.ts`. */
+  /** Simulates a draft edit (advances `draftVersion` by one). Not one of the seven audited interactions — see `setup/edit-agent-definition-draft.ts`. */
   editAgentDefinitionDraft(definitionId: string): Promise<Result<AgentDefinition, DomainError>>;
 
   publish(definitionId: string, caller: CallerContext): Promise<Result<AgentDefinition, DomainError>>;
+  /** `docs/spec/interactions.md` § `createConversation`. Mints the first Session for a brand-new Conversation; the emitted AuditEvent's `who.principal` comes from `input.initiatingPrincipal` (see `setup/create-conversation.ts`), not a separate `CallerContext` — there is no `onBehalfOf` support on this interaction. */
+  createConversation(input: CreateConversationInput): Promise<Result<Conversation, DomainError>>;
   migrate(conversationId: string, caller: CallerContext): Promise<Result<Conversation, DomainError>>;
   drain(sessionId: string, caller: CallerContext): Promise<Result<DrainOutcome, DomainError>>;
   stream(sessionId: string, caller: CallerContext): Promise<Result<AsyncIterable<Event>, DomainError>>;

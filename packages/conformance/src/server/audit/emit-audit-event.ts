@@ -7,7 +7,7 @@ export type EmitAuditEventInput = Omit<AuditEvent, 'id' | 'when'>;
 
 /**
  * Constructs, validates, and appends one `AuditEvent` to the server's
- * audit log — the single choke point every one of the six interactions
+ * audit log — the single choke point every one of the seven interactions
  * routes through, so "every emitted AuditEvent is schema-valid" is
  * true by construction rather than by convention.
  *

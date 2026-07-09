@@ -23,9 +23,10 @@ src/
                    Seeded reply content, zero-padded lexicographic event ids,
                    induced errors and pending-tool-call scenarios via MockProviderControls.
   server/          createReferenceServer(): a minimal conformant OASP v0 server —
-                   the six interactions (publish, migrate, drain, stream, send,
-                   sendToolResult) over an injected AgentProvider, holding
-                   Conversations/Sessions in memory, emitting AuditEvents.
+                   the seven interactions (publish, createConversation, migrate,
+                   drain, stream, send, sendToolResult) over an injected
+                   AgentProvider, holding Conversations/Sessions in memory,
+                   emitting AuditEvents.
   conformance/     ConformanceLevel / ConformanceSelfReport types, verifySelfReport(),
                    and the four check suites: checks/server, checks/adapter,
                    checks/client, checks/audit.
@@ -84,9 +85,9 @@ suite:
 | Level | Check suite | Drives |
 |---|---|---|
 | Client | `runClientChecks(events)` | A consumed event stream — schema validity, S1 termination semantics, lexicographic id ordering. |
-| Server | `runServerChecks(server)` | A `ReferenceServer` through the six interactions — version pinning, lineage append-only, migrate non-compounding, drain resolution, send's current-session check. |
+| Server | `runServerChecks(server)` | A `ReferenceServer` through the seven interactions — version pinning, lineage append-only, migrate non-compounding, drain resolution, send's current-session check, createConversation's never-published rejection. |
 | Adapter | `runAdapterChecks(provider)` | An `AgentProvider` directly — version pinning, resource/vault fidelity, pending-tool-call enumeration, event ordering, no-unsolicited-turn-from-seeding, tool-result correlation. |
-| Audit | `runAuditChecks(server)` | A `ReferenceServer` through all six required-emission interactions — every one emits a schema-valid `AuditEvent` with the right `what` and scope provenance. |
+| Audit | `runAuditChecks(server)` | A `ReferenceServer` through all seven required-emission interactions — every one emits a schema-valid `AuditEvent` with the right `what`, scope provenance, and — for `createConversation`/`migrate` — `refs.credentialIds` naming the actual attached Credential(s). |
 
 A server declares which level(s) it claims via `selfReport(): {
 levels: ConformanceLevel[] }`. **The kit never trusts this claim** —
@@ -99,12 +100,15 @@ deliberately breaks a server's `migrate` implementation, has it still
 self-report `{ levels: ['server'] }`, and shows `verifySelfReport`
 catches the false claim.
 
-**Known, deliberate omission:** none of the four check suites require
-an `AuditEvent` for initial Conversation/Session creation
-(`server.createConversation`). Per `docs/spec/audit.md` § The
-credential-attach gap, this is a documented, tracked v0 limitation —
-there is no `create*` interaction in the required-emission set to
-check against — not an oversight in this kit.
+**Closed in S4:** initial Conversation/Session creation
+(`server.createConversation`) is now one of the seven audited
+interactions, and `checks/audit/run-audit-checks.ts` requires an
+`AuditEvent` for it — including that `refs.credentialIds` names the
+actual Credential(s) resolved into the new Session's `vaultIds`, not
+merely that the event exists. This closes what was previously a
+documented, tracked v0 limitation ("nothing is audited here"); see
+`docs/spec/audit.md` § Credential attachment is audited
+(`createConversation` and `migrate`).
 
 ## Determinism
 

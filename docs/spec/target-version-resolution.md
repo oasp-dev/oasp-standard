@@ -69,3 +69,44 @@ catch a **real conversation** up to that new `publishedVersion`.
 Resolution and `publish` together are what make "snap forward, don't
 disturb" and "move me forward, on request" two independently
 triggerable operations rather than one implicit cascade.
+
+## Relationship to `createConversation`
+
+[`createConversation`](./interactions.md#createconversation) pins a
+brand-new Conversation's first Session using the same source field the
+table's **real conversation** row names: `publishedVersion`. This is
+not a fifth row needing its own resolution logic — a Conversation being
+minted right now is, for this purpose, exactly the **real conversation**
+case; there is no separate rule for "a real conversation that doesn't
+exist yet."
+
+Where `createConversation` diverges from this table is the
+never-published outcome. The table's **real conversation, but
+`publishedVersion` is `null`** row resolves to "leave in place — no
+target resolved," which [`migrate`](./interactions.md#migrate-session-upgrade)'s
+[Preconditions](./interactions.md#preconditions) turn into a successful
+no-op: an *existing* Conversation is left exactly as it was. That
+outcome presupposes a Conversation to leave in place. `createConversation`
+has none yet — there is no prior state to preserve — so "leave in
+place" has no meaning at creation time. A conformant server **MUST**
+instead **reject** `createConversation` outright when the target
+`AgentDefinition`'s `publishedVersion` is `null`, rather than either
+(a) inventing a new "leave in place" behaviour that has nothing to
+apply to, or (b) falling back to pinning the new Conversation to
+`draftVersion`. That fallback is explicitly the wrong shape: it would
+pin live, real usage to unpublished, still-changing content, the exact
+outcome [the table's normative `MUST NOT`](#the-table-normative) above
+already forbids for `migrate` — there is no principled reason
+`createConversation`'s *initial* pin should be held to a looser
+standard than every *subsequent* `migrate` call is.
+
+This rejection has a durable consequence for `migrate` itself: since
+`publishedVersion` is monotonically non-decreasing and v0 has no
+"unpublish" ([`interactions.md` § `publish`](./interactions.md#publish)),
+a server that rejects `createConversation` correctly can never produce
+a real Conversation that later reaches `migrate`'s "leave in place"
+precondition for the never-published reason — that row of the table
+remains reachable only as a defensive/theoretical case for a server
+auditing its own invariants, not as a path any conformant
+`createConversation` implementation can route a live Conversation
+through.

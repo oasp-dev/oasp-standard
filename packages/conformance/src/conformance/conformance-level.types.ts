@@ -7,7 +7,7 @@
  * - `adapter` — maps a provider preserving required semantics.
  *
  * A single implementation can claim more than one — e.g. the reference
- * server in this package claims `server` (it implements the six
+ * server in this package claims `server` (it implements the seven
  * interactions over an injected `AgentProvider`) but not `adapter` (it
  * does not itself map a real provider — that is the mock's job, tested
  * separately).

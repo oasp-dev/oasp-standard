@@ -14,9 +14,11 @@ function idPathParam(description: string): JsonObject {
 }
 
 /**
- * A minimal, explicitly-placeholder `paths` object covering the six
- * v0 interactions (`publish`, `migrate`, `drain`, `stream`, `send`,
- * `sendToolResult`) named in the concept draft's Interactions table.
+ * A minimal, explicitly-placeholder `paths` object covering the seven
+ * v0 interactions (`publish`, `createConversation`, `migrate`, `drain`,
+ * `stream`, `send`, `sendToolResult`) named in the concept draft's
+ * Interactions table, as extended by `createConversation`
+ * (`docs/spec/interactions.md` § `createConversation`, Issue #5 / S4).
  *
  * Full request/response contracts for these interactions are Issue
  * #2 (S1)'s scope, not this bootstrap issue's — each operation here
@@ -36,6 +38,18 @@ export const INTERACTION_PATHS: JsonObject = {
         '200': {
           description: 'The AgentDefinition with published_version advanced.',
           content: { 'application/json': { schema: componentRef(agentDefinitionSchema) } },
+        },
+      },
+    },
+  },
+  '/conversations': {
+    post: {
+      operationId: 'createConversation',
+      summary: 'createConversation — mint the first Session for a new Conversation: mount resources, resolve+attach vaultIds, pin to publishedVersion. Placeholder; full contract is docs/spec/interactions.md § createConversation (Issue #5 / S4).',
+      responses: {
+        '201': {
+          description: 'The newly created Conversation, riding on its freshly minted initial Session.',
+          content: { 'application/json': { schema: componentRef(conversationSchema) } },
         },
       },
     },

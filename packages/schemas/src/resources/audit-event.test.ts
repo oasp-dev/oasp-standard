@@ -47,10 +47,32 @@ describe('auditEventSchema', () => {
     expect(result.error.issues[0]?.path).toEqual(['what']);
   });
 
+  it('accepts what: \'createConversation\', the emission point for a new Conversation\'s initial Session (mount + credential attach)', () => {
+    const result = auditEventSchema.safeParse({
+      ...validAuditEvent,
+      what: 'createConversation',
+      refs: { conversationId: 'conv_1', sessionId: 'sess_1', credentialIds: ['credential_1'] },
+    });
+    expect(result.success, result.success ? undefined : JSON.stringify(result.error.issues)).toBe(true);
+  });
+
+  it('accepts refs.credentialIds naming more than one attached Credential', () => {
+    const result = auditEventSchema.safeParse({ ...validAuditEvent, refs: { sessionId: 'sess_1', credentialIds: ['credential_1', 'credential_2'] } });
+    expect(result.success, result.success ? undefined : JSON.stringify(result.error.issues)).toBe(true);
+  });
+
+  it('rejects an empty-string entry in refs.credentialIds', () => {
+    const result = auditEventSchema.safeParse({ ...validAuditEvent, refs: { sessionId: 'sess_1', credentialIds: [''] } });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.path).toEqual(['refs', 'credentialIds', 0]);
+  });
+
   it('infers the expected shape', () => {
     expectTypeOf<AuditEvent['what']>().toEqualTypeOf<
-      'publish' | 'migrate' | 'drain' | 'stream' | 'send' | 'sendToolResult'
+      'publish' | 'createConversation' | 'migrate' | 'drain' | 'stream' | 'send' | 'sendToolResult'
     >();
     expectTypeOf<AuditEvent['outcome']>().toEqualTypeOf<'success' | 'failure'>();
+    expectTypeOf<AuditEvent['refs']['credentialIds']>().toEqualTypeOf<string[] | undefined>();
   });
 });

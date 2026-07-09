@@ -7,5 +7,5 @@
   "scope": { "level": "workspace", "id": "workspace_9f2a1c" },
   "when": "2026-07-09T02:14:05.000Z",
   "outcome": "maybe",
-  "refs": {}
+  "refs": { "credentialIds": [""] }
 }

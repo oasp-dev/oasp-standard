@@ -3,12 +3,13 @@
 > Prerequisite reading: [`conversation-and-session.md`](./conversation-and-session.md).
 > See also [`docs/oasp-v0-concept.md` § Interactions (v0)](../oasp-v0-concept.md#interactions-v0).
 
-OASP v0 defines six interactions: `publish`, `migrate`, `drain`,
-`stream`, `send`, and `sendToolResult`. Each subsection below states
-its normative (MUST/SHOULD/MAY) behaviour, its non-normative rationale
-where useful, and — briefly — whether and how it is audited. Endpoint
-shapes referenced throughout are the placeholder paths already wired
-into the generated OpenAPI document; see
+OASP v0 defines seven interactions: `publish`, `createConversation`,
+`migrate`, `drain`, `stream`, `send`, and `sendToolResult`. Each
+subsection below states its normative (MUST/SHOULD/MAY) behaviour, its
+non-normative rationale where useful, and — briefly — whether and how
+it is audited. Endpoint shapes referenced throughout are the
+placeholder paths already wired into the generated OpenAPI document;
+see
 [`INTERACTION_PATHS`](../../packages/schemas/src/generate/interaction-paths.ts)
 and [`openapi/oasp-v1alpha1.yaml`](../../openapi/oasp-v1alpha1.yaml).
 This document is what turns those placeholders into full contracts.
@@ -16,8 +17,8 @@ This document is what turns those placeholders into full contracts.
 > **Note on audit (forward reference):** Per
 > [`auditEventSchema`](../../packages/schemas/src/resources/audit-event.ts),
 > a conformant server emits one `AuditEvent` for **every one of these
-> six interactions**, including `stream` — which, unlike the other
-> five, is a read path. That's deliberate: the FHIR `AuditEvent`
+> seven interactions**, including `stream` — which, unlike the other
+> six, is a read path. That's deliberate: the FHIR `AuditEvent`
 > posture this standard inherits answers "what did the agent do (or
 > have observed of it) as {member} on {date}", not only "what
 > changed." The full normative shape of `who` / `what` / `scope` /
@@ -71,6 +72,84 @@ Normative behaviour:
 > publish deliberately does not cascade into one.
 
 **Audit:** `AuditEvent{ what: 'publish', refs: { definitionId } }`.
+
+## `createConversation`
+
+`POST /conversations`.
+
+Mints the **first** `Session` a brand-new `Conversation` ever rides on:
+mounts `resources[]`, resolves and attaches `vaultIds[]`, and pins the
+new Session's — and therefore the new Conversation's — agent version.
+This is the emission point for a Conversation's *initial* credential
+attachment; see [Audit](#createconversation-audit) below.
+
+> **Note (why this is its own interaction, not folded into `migrate`):**
+> credential attachment happens at Session creation
+> ([`credentialSchema`](../../packages/schemas/src/resources/credential.ts)),
+> and every real Conversation's *first* Session is minted here, not by
+> `migrate` — `migrate` only ever mints a *replacement* Session for a
+> Conversation that already exists (see its Preconditions: "the target
+> `Conversation` **MUST** exist"). Before this section, initial Session
+> creation had no corresponding interaction anywhere in the v0 set, so
+> the first credential attachment of every Conversation was
+> unauditable — not because "credential attach" was overlooked, but
+> because the interaction it happens under didn't exist. Folding it
+> into `migrate` was considered and rejected: `migrate` means "move an
+> *existing* Conversation onto a new version," and a zero-stage
+> "migration" from nothing is not that operation. Builder and
+> test-session creation ([`createBuilderSession`](../../packages/conformance/src/server/setup/create-unbound-session.ts) /
+> `createTestSession`) remain **unaudited setup helpers**: neither
+> mints a durable `Conversation` (see
+> [`conversation-and-session.md`](./conversation-and-session.md)), both
+> exist purely as dev-time scaffolding to preview/validate an
+> `AgentDefinition` before it is ever exposed to a real user, and
+> nothing in this document's required-emission set changes that
+> boundary.
+
+### Normative behaviour
+
+- A server **MUST** resolve the new Session's — and therefore the new
+  Conversation's — `pinnedAgentVersion` to the target `AgentDefinition`'s
+  current `publishedVersion`, per
+  [`target-version-resolution.md`](./target-version-resolution.md#relationship-to-createconversation).
+- If the target `AgentDefinition`'s `publishedVersion` is `null` (never
+  published), the server **MUST reject** the `createConversation` call
+  — it **MUST NOT** create a Conversation pinned to `draftVersion` as a
+  fallback, and **MUST NOT** silently succeed with no Conversation
+  created. This differs from `migrate`'s handling of the same
+  never-published case (a successful "leave in place" no-op,
+  [Preconditions](#preconditions)): `migrate`'s no-op has an existing
+  Conversation to leave undisturbed, while `createConversation` has no
+  Conversation yet — there is nothing to "leave in place," so rejection
+  is the only sound outcome. See
+  [target-version-resolution.md's `createConversation` addendum](./target-version-resolution.md#relationship-to-createconversation)
+  for the full normative treatment.
+- A server **MUST** mount the new Session's `resources[]` exactly as
+  given by the caller — the same "in full, never partial" requirement
+  [Stage 1 of `migrate`](#stage-1--mint-session-at-target-version) states
+  for re-attachment applies here to first attachment.
+- A server **MUST** resolve the new Session's `vaultIds[]` by matching
+  each `mcp`-type tool grant requiring `auth: 'credential'` on the
+  target `AgentDefinition` version against a registered `Credential`
+  whose `mcpServerUrl` equals the grant's `serverUrl` — the identical
+  matching rule [Stage 1 of `migrate`](#stage-1--mint-session-at-target-version)
+  uses for re-resolution, applied here for the *first* time for this
+  Conversation.
+- Once the Session is minted, the server **MUST** create the
+  Conversation with `currentSessionId` set to the new Session's `id`,
+  `previousSessionIds` set to an empty array (there is no lineage yet),
+  and `pinnedAgentVersion` equal to the new Session's
+  `pinnedAgentVersion`.
+
+### `createConversation` Audit
+
+**Audit:** `AuditEvent{ what: 'createConversation', refs: {
+conversationId, sessionId, credentialIds } }`. `refs.credentialIds`
+names every `Credential` resolved into the new Session's `vaultIds` —
+this is what makes "which credential was attached, at creation, on
+whose behalf" answerable from the trail alone, closing the gap
+`docs/spec/audit.md` previously tracked as v0-release-blocking (see
+[`audit.md` § Credential attachment is audited](./audit.md#credential-attachment-is-audited-createconversation-and-migrate)).
 
 ## `migrate` (session upgrade)
 

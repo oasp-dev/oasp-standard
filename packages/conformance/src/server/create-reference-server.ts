@@ -16,11 +16,12 @@ import type { CreateReferenceServerOptions } from './create-reference-server-opt
 import type { ReferenceServer } from './reference-server.types';
 
 /**
- * Builds a minimal, conformant OASP v0 reference server: the six
- * interactions (`publish`, `migrate`, `drain`, `stream`, `send`,
- * `sendToolResult`) implemented over an injected `AgentProvider`,
- * holding Conversations/Sessions in memory, and emitting `AuditEvent`s
- * validated against `@oasp/schemas` for each interaction.
+ * Builds a minimal, conformant OASP v0 reference server: the seven
+ * interactions (`publish`, `createConversation`, `migrate`, `drain`,
+ * `stream`, `send`, `sendToolResult`) implemented over an injected
+ * `AgentProvider`, holding Conversations/Sessions in memory, and
+ * emitting `AuditEvent`s validated against `@oasp/schemas` for each
+ * interaction.
  *
  * This is the target the "Server" conformance level's checks
  * (`conformance/checks/server/`) and the audit-emission checks
@@ -39,7 +40,6 @@ export function createReferenceServer(options: CreateReferenceServerOptions): Re
   return {
     createAgentDefinition: (input) => createAgentDefinitionSetup(state, provider, environmentId, input),
     registerCredential: (input) => registerCredentialSetup(state, input),
-    createConversation: (input) => createConversationSetup(state, provider, input),
     createBuilderSession: (agentDefinitionId, resources) =>
       createUnboundSessionSetup(state, provider, agentDefinitionId, 'builder', resources),
     createTestSession: (agentDefinitionId, resources) =>
@@ -47,6 +47,7 @@ export function createReferenceServer(options: CreateReferenceServerOptions): Re
     editAgentDefinitionDraft: (definitionId) => editAgentDefinitionDraftSetup(state, provider, environmentId, definitionId),
 
     publish: (definitionId, caller) => publishInteraction(state, clock, definitionId, caller),
+    createConversation: (input) => createConversationSetup(state, provider, clock, input),
     migrate: (conversationId, caller) => migrateInteraction(state, provider, toolExecutor, clock, conversationId, caller),
     drain: (sessionId, caller) => drainInteraction(state, provider, toolExecutor, clock, sessionId, caller),
     stream: (sessionId, caller) => streamInteraction(state, provider, clock, sessionId, caller),

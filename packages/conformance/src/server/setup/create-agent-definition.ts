@@ -4,9 +4,10 @@ import type { ServerState } from '../store/server-state';
 import type { CreateAgentDefinitionInput } from './create-agent-definition-input.types';
 
 /**
- * Setup helper (not one of the six audited interactions — see
- * `docs/spec/audit.md` § The credential-attach gap for why v0 has no
- * `create*` interaction to hang an emission point on): creates a new
+ * Setup helper (not one of the seven audited interactions —
+ * `AgentDefinition` creation itself has no `create*` audit-emission
+ * point in v0, unlike Conversation creation which does, see
+ * `docs/spec/interactions.md` § `createConversation`): creates a new
  * `AgentDefinition` at `draftVersion: 1, publishedVersion: null`, and
  * immediately materializes it at the provider (`createAgent`) into a
  * fixed environment so later `createSession` calls for it have a
@@ -15,7 +16,7 @@ import type { CreateAgentDefinitionInput } from './create-agent-definition-input
  * Deploying eagerly, on every definition's creation, is a reference
  * server simplification — a production server would more plausibly
  * defer deployment or make it its own explicit step — but nothing in
- * the six interactions' normative behaviour depends on *when*
+ * the seven interactions' normative behaviour depends on *when*
  * deployment happens, only that a `Deployment` exists by the time
  * `createSession` needs it.
  *

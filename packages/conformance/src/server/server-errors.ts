@@ -1,7 +1,7 @@
 import type { DomainError } from '../shared/domain-error.types';
 
 /**
- * Domain errors the reference server's setup helpers and six
+ * Domain errors the reference server's setup helpers and seven
  * interactions return. Centralised so `code` values are stable across
  * call sites (see `docs/oasp-v0-concept.md` § Error Handling — Result
  * Pattern in the project's TypeScript conventions).
