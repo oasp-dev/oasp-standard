@@ -32,10 +32,12 @@ const auditRefsSchema = z.object({
  * prior art and the posture: an implementation that cannot answer
  * *"what did the agent do as {member} on {date}"* is non-conformant.
  *
- * A conformant server emits one AuditEvent for every mutating
- * interaction (`publish`, `migrate`, `drain`, `stream`, `send`,
- * `sendToolResult`). Emission and shape are conformance; delivery,
- * storage, and retention are implementation.
+ * A conformant server emits one AuditEvent for each of the six v0
+ * interactions (`publish`, `migrate`, `drain`, `stream`, `send`,
+ * `sendToolResult`) — including `stream`, which is a read path, audited
+ * per the FHIR posture ("what did the agent do, or have observed of it").
+ * Emission and shape are conformance; delivery, storage, and retention
+ * are implementation.
  *
  * @see docs/oasp-v0-concept.md § AuditEvent (v0 CORE — non-negotiable)
  * @see docs/oasp-v0-concept.md § Interactions (v0)

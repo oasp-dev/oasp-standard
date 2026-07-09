@@ -14,9 +14,11 @@ import { z } from 'zod';
 const scopeLevelSchema = z.enum(['tenant', 'workspace', 'user', 'group', 'role']);
 
 /**
- * A generalized-ownership attachment point. AgentDefinitions, sessions,
- * credentials, and audit events all attach to a scope rather than a
- * hardcoded owner type.
+ * A generalized-ownership attachment point. AgentDefinitions,
+ * Conversations, Credentials, and AuditEvents all attach to a scope
+ * rather than a hardcoded owner type. (A Session does not carry a scope
+ * of its own — it inherits its Conversation's, or its pinned
+ * AgentDefinition's, per the audit scope-provenance rule.)
  *
  * The standard's default cardinality is **N at every level** — e.g. many
  * AgentDefinitions may attach to the same workspace. Which levels a given

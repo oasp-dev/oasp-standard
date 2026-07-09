@@ -1,10 +1,14 @@
-# OASP Interaction Spec — Index
+# OASP Specification — Index
 
 Normative behavioural specification for OASP v0: the Conversation ≠
-Session model, and the six interactions that operate over it
-(`publish`, `migrate`, `drain`, `stream`, `send`, `sendToolResult`).
-This is S1 — [issue #2](https://github.com/FieldstateNZ/oasp-standard/issues/2)
-— and it builds directly on the S0 resource schemas
+Session model and the six interactions that operate over it
+(`publish`, `migrate`, `drain`, `stream`, `send`, `sendToolResult`) —
+S1, [issue #2](https://github.com/FieldstateNZ/oasp-standard/issues/2)
+— plus the identity and audit layer underneath them: scope resolution,
+the `Principal` claims contract, on-behalf-of / scope-pinning, and the
+normative `AuditEvent` required-emission set — S2,
+[issue #3](https://github.com/FieldstateNZ/oasp-standard/issues/3).
+Both build directly on the S0 resource schemas
 ([issue #1](https://github.com/FieldstateNZ/oasp-standard/issues/1))
 under [`packages/schemas/src/resources/`](../../packages/schemas/src/resources/)
 and their generated artifacts under
@@ -24,12 +28,15 @@ also logged in this slice's handback to the dev lead.
 | [`conversation-and-session.md`](./conversation-and-session.md) | The structural insight: Conversation ≠ Session, the warp/weft framing, the `previousSessionIds` lineage. Read this first — every interaction below falls out of it. |
 | [`interactions.md`](./interactions.md) | `publish`, `migrate`, `drain`, `stream`, `send`, `sendToolResult` — full normative behaviour, including sequence diagrams for publish→migrate and drain-on-reopen. |
 | [`target-version-resolution.md`](./target-version-resolution.md) | The normative table resolving which `AgentDefinition` version a given session context targets when `migrate` runs. |
+| [`scope-and-identity.md`](./scope-and-identity.md) | S2. Scope taxonomy and resolution (most-specific-scope-wins), the profile-override mechanism, the `Principal` claims contract (IdP-agnostic, OIDC-mappable), and the on-behalf-of / scope-pinning containment rule. |
+| [`audit.md`](./audit.md) | S2. The normative minimum `AuditEvent` shape, the required-emission set reconciled against the landed `what` enum, the conformance test ("what did the agent do as {principal} on {date}"), and the emission-vs-delivery/storage/retention boundary. |
 
-Identity, on-behalf-of, and the full `AuditEvent` normative spec are
-**out of scope here** — that's S2
-([issue #3](https://github.com/FieldstateNZ/oasp-standard/issues/3)).
-This spec only notes, per interaction, that it is audited and by which
-`what` value; see
+`interactions.md` notes, per interaction, only that it is audited and
+by which `what` value; the full normative shape of `who` / `what` /
+`scope` / `when` / `outcome` / `refs`, how on-behalf-of attribution
+works, and which interactions **MUST** emit are specified in
+[`scope-and-identity.md`](./scope-and-identity.md) and
+[`audit.md`](./audit.md) — see
 [`packages/schemas/src/resources/audit-event.ts`](../../packages/schemas/src/resources/audit-event.ts)
 for the current shape of that record.
 
