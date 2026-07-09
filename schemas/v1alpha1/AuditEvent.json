@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.oasp.dev/v1alpha1/AuditEvent.json",
+  "title": "AuditEvent",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique identifier of this AuditEvent."
+    },
+    "who": {
+      "type": "object",
+      "properties": {
+        "principal": {
+          "description": "The Principal that performed the interaction.",
+          "$ref": "#/$defs/PrincipalRef"
+        },
+        "onBehalfOf": {
+          "description": "If the principal acted on behalf of another party (e.g. an assistant acting as a member), that party.",
+          "$ref": "#/$defs/PrincipalRef"
+        }
+      },
+      "required": [
+        "principal"
+      ],
+      "additionalProperties": false,
+      "description": "The acting principal, and the party it acted on behalf of, if any."
+    },
+    "what": {
+      "type": "string",
+      "enum": [
+        "publish",
+        "createConversation",
+        "migrate",
+        "drain",
+        "stream",
+        "send",
+        "sendToolResult"
+      ],
+      "description": "Which v0 interaction this AuditEvent records."
+    },
+    "scope": {
+      "description": "The generalized-ownership attachment point the interaction occurred within.",
+      "$ref": "#/$defs/Scope"
+    },
+    "when": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "description": "Timestamp the interaction occurred, as an ISO 8601 date-time. A UTC `Z` designator or a numeric zone offset (e.g. `+12:00`) is accepted, so audit records from any timezone verify against the published schema."
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "success",
+        "failure"
+      ],
+      "description": "Whether the interaction succeeded or failed."
+    },
+    "refs": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "description": "Identifier of the Session involved, if any.",
+          "type": "string",
+          "minLength": 1
+        },
+        "conversationId": {
+          "description": "Identifier of the Conversation involved, if any.",
+          "type": "string",
+          "minLength": 1
+        },
+        "definitionId": {
+          "description": "Identifier of the AgentDefinition involved, if any.",
+          "type": "string",
+          "minLength": 1
+        },
+        "credentialIds": {
+          "description": "Identifiers of the Credentials attached/used in this interaction, so the trail names which credential — not just that one was attached.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "References to the session, conversation, definition, and/or credentials involved."
+    }
+  },
+  "required": [
+    "id",
+    "who",
+    "what",
+    "scope",
+    "when",
+    "outcome",
+    "refs"
+  ],
+  "additionalProperties": false,
+  "description": "The normative audit record emitted for every mutating interaction.",
+  "$defs": {
+    "PrincipalKind": {
+      "type": "string",
+      "enum": [
+        "user",
+        "service",
+        "agent"
+      ],
+      "description": "The kind of acting party: a human user, a machine-to-machine service, or an agent acting on its own."
+    },
+    "PrincipalRef": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "The kind of principal being referenced.",
+          "$ref": "#/$defs/PrincipalKind"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier of the referenced Principal resource."
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false,
+      "description": "A pointer to a Principal by kind and id, without embedding its full claims-contract record."
+    },
+    "Scope": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "tenant",
+            "workspace",
+            "user",
+            "group",
+            "role"
+          ],
+          "description": "Which level of the tenant/workspace/user/group/role taxonomy this attachment point is at."
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier of the scoped entity (the tenant id, workspace id, user id, group id, or role id)."
+        }
+      },
+      "required": [
+        "level",
+        "id"
+      ],
+      "additionalProperties": false,
+      "description": "A generalized-ownership attachment point: a taxonomy level plus the identifier at that level."
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.oasp.dev/v1alpha1/Deployment.json",
+  "title": "Deployment",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique identifier of this Deployment."
+    },
+    "agentDefinitionId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the AgentDefinition this Deployment materializes."
+    },
+    "provider": {
+      "description": "The provider this Definition was deployed to.",
+      "$ref": "#/$defs/Provider"
+    },
+    "providerAgentId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The provider's own identifier for the materialized agent."
+    },
+    "environmentId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the environment this Deployment was created in."
+    },
+    "providerVersion": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The provider's own version tag for the materialized agent, distinct from the Definition's version pointers."
+    },
+    "canonicalHash": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Hash of the Definition's canonical (post-normalization) form at deploy time. Two deploy calls against a Definition that hashes the same are idempotent — the existing Deployment is reused rather than re-materialized."
+    }
+  },
+  "required": [
+    "id",
+    "agentDefinitionId",
+    "provider",
+    "providerAgentId",
+    "environmentId",
+    "providerVersion",
+    "canonicalHash"
+  ],
+  "additionalProperties": false,
+  "description": "A materialization of an AgentDefinition at a specific provider and environment, idempotent by canonicalHash.",
+  "$defs": {
+    "Provider": {
+      "type": "string",
+      "enum": [
+        "anthropic",
+        "openai",
+        "google"
+      ],
+      "description": "Agent-hosting provider. `anthropic` is the reference adapter; `openai` and `google` are reserved by name for future adapters."
+    }
+  }
+}

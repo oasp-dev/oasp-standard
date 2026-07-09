@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.oasp.dev/v1alpha1/Event.json",
+  "title": "Event",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Opaque, order-comparable identifier for this event within its session stream. Used as the listSessionEvents pagination cursor and to establish the event ordering conformant adapters must preserve."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "description": "Timestamp the event was emitted, as an ISO 8601 date-time. A UTC `Z` designator or a numeric zone offset (e.g. `+12:00`) is accepted, so implementations in any timezone can emit locally-offset timestamps."
+        },
+        "type": {
+          "type": "string",
+          "const": "assistant_message_start",
+          "description": "Discriminant: the start of a new assistant message."
+        },
+        "messageId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier of the assistant message beginning."
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "type",
+        "messageId"
+      ],
+      "additionalProperties": false,
+      "description": "Marks the start of a new assistant message."
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Opaque, order-comparable identifier for this event within its session stream. Used as the listSessionEvents pagination cursor and to establish the event ordering conformant adapters must preserve."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "description": "Timestamp the event was emitted, as an ISO 8601 date-time. A UTC `Z` designator or a numeric zone offset (e.g. `+12:00`) is accepted, so implementations in any timezone can emit locally-offset timestamps."
+        },
+        "type": {
+          "type": "string",
+          "const": "assistant_message_text",
+          "description": "Discriminant: an incremental text chunk of an assistant message."
+        },
+        "messageId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier of the assistant message this text chunk belongs to."
+        },
+        "delta": {
+          "type": "string",
+          "description": "The incremental text content of this chunk."
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "type",
+        "messageId",
+        "delta"
+      ],
+      "additionalProperties": false,
+      "description": "An incremental text chunk of an in-progress assistant message."
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Opaque, order-comparable identifier for this event within its session stream. Used as the listSessionEvents pagination cursor and to establish the event ordering conformant adapters must preserve."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "description": "Timestamp the event was emitted, as an ISO 8601 date-time. A UTC `Z` designator or a numeric zone offset (e.g. `+12:00`) is accepted, so implementations in any timezone can emit locally-offset timestamps."
+        },
+        "type": {
+          "type": "string",
+          "const": "assistant_message_end",
+          "description": "Discriminant: the end of an assistant message."
+        },
+        "messageId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier of the assistant message ending."
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "type",
+        "messageId"
+      ],
+      "additionalProperties": false,
+      "description": "Marks the end of an assistant message."
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Opaque, order-comparable identifier for this event within its session stream. Used as the listSessionEvents pagination cursor and to establish the event ordering conformant adapters must preserve."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "description": "Timestamp the event was emitted, as an ISO 8601 date-time. A UTC `Z` designator or a numeric zone offset (e.g. `+12:00`) is accepted, so implementations in any timezone can emit locally-offset timestamps."
+        },
+        "type": {
+          "type": "string",
+          "const": "assistant_thinking",
+          "description": "Discriminant: an incremental extended-thinking chunk."
+        },
+        "delta": {
+          "type": "string",
+          "description": "The incremental thinking content of this chunk."
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "type",
+        "delta"
+      ],
+      "additionalProperties": false,
+      "description": "An incremental chunk of the assistant's extended thinking."
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Opaque, order-comparable identifier for this event within its session stream. Used as the listSessionEvents pagination cursor and to establish the event ordering conformant adapters must preserve."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "description": "Timestamp the event was emitted, as an ISO 8601 date-time. A UTC `Z` designator or a numeric zone offset (e.g. `+12:00`) is accepted, so implementations in any timezone can emit locally-offset timestamps."
+        },
+        "type": {
+          "type": "string",
+          "const": "custom_tool_use",
+          "description": "Discriminant: an invocation of a custom (non-builtin, non-MCP) tool."
+        },
+        "toolUseId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier correlating this tool use to its eventual result."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the custom tool being invoked."
+        },
+        "input": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {},
+          "description": "The input arguments passed to the custom tool."
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "type",
+        "toolUseId",
+        "name",
+        "input"
+      ],
+      "additionalProperties": false,
+      "description": "An invocation of a custom tool defined on the AgentDefinition."
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Opaque, order-comparable identifier for this event within its session stream. Used as the listSessionEvents pagination cursor and to establish the event ordering conformant adapters must preserve."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "description": "Timestamp the event was emitted, as an ISO 8601 date-time. A UTC `Z` designator or a numeric zone offset (e.g. `+12:00`) is accepted, so implementations in any timezone can emit locally-offset timestamps."
+        },
+        "type": {
+          "type": "string",
+          "const": "builtin_tool_use",
+          "description": "Discriminant: an invocation of a provider-hosted builtin tool."
+        },
+        "toolUseId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier correlating this tool use to its eventual result."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the builtin tool being invoked."
+        },
+        "input": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {},
+          "description": "The input arguments passed to the builtin tool."
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "type",
+        "toolUseId",
+        "name",
+        "input"
+      ],
+      "additionalProperties": false,
+      "description": "An invocation of a provider-hosted builtin tool."
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Opaque, order-comparable identifier for this event within its session stream. Used as the listSessionEvents pagination cursor and to establish the event ordering conformant adapters must preserve."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "description": "Timestamp the event was emitted, as an ISO 8601 date-time. A UTC `Z` designator or a numeric zone offset (e.g. `+12:00`) is accepted, so implementations in any timezone can emit locally-offset timestamps."
+        },
+        "type": {
+          "type": "string",
+          "const": "status",
+          "description": "Discriminant: a session status transition."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running",
+            "idle",
+            "error"
+          ],
+          "description": "The session's new status."
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "type",
+        "status"
+      ],
+      "additionalProperties": false,
+      "description": "A transition in the session's status."
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Opaque, order-comparable identifier for this event within its session stream. Used as the listSessionEvents pagination cursor and to establish the event ordering conformant adapters must preserve."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "description": "Timestamp the event was emitted, as an ISO 8601 date-time. A UTC `Z` designator or a numeric zone offset (e.g. `+12:00`) is accepted, so implementations in any timezone can emit locally-offset timestamps."
+        },
+        "type": {
+          "type": "string",
+          "const": "error",
+          "description": "Discriminant: an error condition."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable description of the error."
+        },
+        "recoverable": {
+          "type": "boolean",
+          "description": "Whether the session can continue after this error (e.g. via drain) or is terminally failed."
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "type",
+        "message",
+        "recoverable"
+      ],
+      "additionalProperties": false,
+      "description": "An error condition encountered while executing the session."
+    }
+  ],
+  "description": "A normalised session-stream event, discriminated by `type`."
+}

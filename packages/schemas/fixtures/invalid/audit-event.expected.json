@@ -1,0 +1,4 @@
+[
+  { "path": ["outcome"], "code": "invalid_value" },
+  { "path": ["refs", "credentialIds", 0], "code": "too_small" }
+]

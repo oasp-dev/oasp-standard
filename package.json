@@ -1,0 +1,20 @@
+{
+  "name": "oasp-standard",
+  "version": "0.0.0",
+  "private": true,
+  "description": "OASP — Open Agent Session Protocol. Spec, schemas, and conformance kit.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "generate": "pnpm --filter @oasp/schemas generate",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

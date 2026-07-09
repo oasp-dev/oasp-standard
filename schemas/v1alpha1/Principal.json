@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.oasp.dev/v1alpha1/Principal.json",
+  "title": "Principal",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique identifier of this Principal."
+    },
+    "kind": {
+      "description": "The kind of acting party: a human user, a service, or an agent.",
+      "$ref": "#/$defs/PrincipalKind"
+    },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable subject identifier for this principal, mappable to an OIDC `sub` claim."
+        },
+        "issuer": {
+          "description": "Identifier of the asserting identity provider, mappable to an OIDC `iss` claim.",
+          "type": "string",
+          "minLength": 1
+        },
+        "displayName": {
+          "description": "Human-readable display name, if asserted by the identity provider.",
+          "type": "string",
+          "minLength": 1
+        },
+        "email": {
+          "description": "Email address, if asserted by the identity provider.",
+          "type": "string",
+          "format": "email",
+          "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+        }
+      },
+      "required": [
+        "subject"
+      ],
+      "additionalProperties": false,
+      "description": "The IdP-agnostic, OIDC-mappable claims-contract identity assertion."
+    },
+    "scopeMemberships": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Scope"
+      },
+      "description": "The scopes this principal is a member of, used to resolve most-specific-scope-wins."
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "IdP-agnostic role names asserted for this principal, independent of scope membership."
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "identity",
+    "scopeMemberships",
+    "roles"
+  ],
+  "additionalProperties": false,
+  "description": "A first-class identity: the acting party behind every agent action.",
+  "$defs": {
+    "PrincipalKind": {
+      "type": "string",
+      "enum": [
+        "user",
+        "service",
+        "agent"
+      ],
+      "description": "The kind of acting party: a human user, a machine-to-machine service, or an agent acting on its own."
+    },
+    "Scope": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "tenant",
+            "workspace",
+            "user",
+            "group",
+            "role"
+          ],
+          "description": "Which level of the tenant/workspace/user/group/role taxonomy this attachment point is at."
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier of the scoped entity (the tenant id, workspace id, user id, group id, or role id)."
+        }
+      },
+      "required": [
+        "level",
+        "id"
+      ],
+      "additionalProperties": false,
+      "description": "A generalized-ownership attachment point: a taxonomy level plus the identifier at that level."
+    }
+  }
+}

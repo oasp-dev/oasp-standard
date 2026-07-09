@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.oasp.dev/v1alpha1/Conversation.json",
+  "title": "Conversation",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique identifier of this Conversation."
+    },
+    "scope": {
+      "description": "The generalized-ownership attachment point this Conversation belongs to.",
+      "$ref": "#/$defs/Scope"
+    },
+    "initiatingPrincipal": {
+      "description": "The Principal that started this Conversation.",
+      "$ref": "#/$defs/PrincipalRef"
+    },
+    "currentSessionId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the Session this Conversation currently rides on."
+    },
+    "pinnedAgentVersion": {
+      "description": "The immutable AgentDefinition version the current session was minted against.",
+      "$ref": "#/$defs/AgentVersionRef"
+    },
+    "previousSessionIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Identifiers of every Session this Conversation has ridden on before the current one, oldest first — the lineage `migrate` appends to on each session upgrade."
+    }
+  },
+  "required": [
+    "id",
+    "scope",
+    "initiatingPrincipal",
+    "currentSessionId",
+    "pinnedAgentVersion",
+    "previousSessionIds"
+  ],
+  "additionalProperties": false,
+  "description": "The durable thread that survives across the disposable provider Sessions it rides on.",
+  "$defs": {
+    "Scope": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "tenant",
+            "workspace",
+            "user",
+            "group",
+            "role"
+          ],
+          "description": "Which level of the tenant/workspace/user/group/role taxonomy this attachment point is at."
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier of the scoped entity (the tenant id, workspace id, user id, group id, or role id)."
+        }
+      },
+      "required": [
+        "level",
+        "id"
+      ],
+      "additionalProperties": false,
+      "description": "A generalized-ownership attachment point: a taxonomy level plus the identifier at that level."
+    },
+    "PrincipalKind": {
+      "type": "string",
+      "enum": [
+        "user",
+        "service",
+        "agent"
+      ],
+      "description": "The kind of acting party: a human user, a machine-to-machine service, or an agent acting on its own."
+    },
+    "PrincipalRef": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "The kind of principal being referenced.",
+          "$ref": "#/$defs/PrincipalKind"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier of the referenced Principal resource."
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false,
+      "description": "A pointer to a Principal by kind and id, without embedding its full claims-contract record."
+    },
+    "AgentVersionRef": {
+      "type": "object",
+      "properties": {
+        "agentDefinitionId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier of the pinned AgentDefinition."
+        },
+        "version": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "description": "The specific, immutable version number of the AgentDefinition being pinned."
+        }
+      },
+      "required": [
+        "agentDefinitionId",
+        "version"
+      ],
+      "additionalProperties": false,
+      "description": "A pin to one immutable version of an AgentDefinition."
+    }
+  }
+}

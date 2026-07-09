@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: typecheck, generate (drift gate), test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Regenerate JSON Schema + OpenAPI from the Zod source
+        run: pnpm generate
+
+      - name: Fail if generation drifted from committed artifacts
+        run: |
+          # Stage under the artifact paths first so a *newly generated but
+          # never-committed* file (e.g. a 9th resource whose JSON Schema was
+          # not `git add`ed) is caught too — plain `git diff --exit-code`
+          # returns 0 for untracked files and would miss that staleness.
+          git add -A -- schemas/ openapi/
+          git diff --cached --exit-code -- schemas/ openapi/ || {
+            echo "::error::schemas/ or openapi/ is out of date (modified or an artifact was not committed). Run 'pnpm generate' and commit the result.";
+            exit 1;
+          }
+
+      - name: Test
+        # `pnpm -r` runs every workspace package's own `test` script — this
+        # picks up `packages/conformance` (@oasp/conformance) automatically
+        # via pnpm-workspace.yaml's `packages/*` pattern, no separate step
+        # needed. Its conformance suite is deterministic and CI-safe by
+        # construction: everything runs against an in-memory mock provider
+        # (packages/conformance/src/mock/), so this step never needs network
+        # access or live provider credentials. The per-adapter live-provider
+        # smoke set (docs/spec/adapters.md § Live-provider smoke) is a
+        # separate, manually-run release ritual — deliberately not wired
+        # into this workflow.
+        run: pnpm -r test

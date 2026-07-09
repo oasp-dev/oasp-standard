@@ -1,0 +1,16 @@
+{
+  "id": "audit_01hz3xk321",
+  "who": {
+    "principal": { "kind": "agent", "id": "agentdef_01hz3x9k2v" },
+    "onBehalfOf": { "kind": "user", "id": "user_3b7c9d" }
+  },
+  "what": "createConversation",
+  "scope": { "level": "workspace", "id": "workspace_9f2a1c" },
+  "when": "2026-07-09T14:14:05.000+12:00",
+  "outcome": "success",
+  "refs": {
+    "sessionId": "sess_01hz3xf012",
+    "conversationId": "conv_01hz3xcz88",
+    "credentialIds": ["credential_01hz3xa7e2"]
+  }
+}

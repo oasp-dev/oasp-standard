@@ -1,0 +1,10 @@
+{
+  "id": "sess_01hz3xf012",
+  "pinnedAgentVersion": { "agentDefinitionId": "agentdef_01hz3x9k2v", "version": 6 },
+  "resources": [
+    { "type": "file", "fileId": "file_7a2b9c" },
+    { "type": "memory_store", "storeId": "mem_4d8e1f" },
+    { "type": "github_repository", "owner": "fieldstate-labs", "repo": "lucidbrain", "ref": "main" }
+  ],
+  "vaultIds": ["cred_01hz3xg456"]
+}
