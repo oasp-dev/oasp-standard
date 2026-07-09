@@ -31,4 +31,11 @@ describe('createFixedClock', () => {
   it('throws on an unparseable start instant', () => {
     expect(() => createFixedClock('not-a-date')).toThrow(/not a parseable/);
   });
+
+  it('throws on a non-positive increment (would break the strictly-increasing invariant)', () => {
+    const start = '2026-01-01T00:00:00.000Z';
+    expect(() => createFixedClock(start, 0)).toThrow(/positive/);
+    expect(() => createFixedClock(start, -5)).toThrow(/positive/);
+    expect(() => createFixedClock(start, Number.NaN)).toThrow(/positive/);
+  });
 });

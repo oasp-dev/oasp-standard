@@ -20,6 +20,13 @@ export function createFixedClock(startIso: string, incrementMs = 10): Clock {
   if (Number.isNaN(currentMs)) {
     throw new Error(`createFixedClock: startIso "${startIso}" is not a parseable ISO 8601 date-time.`);
   }
+  if (!Number.isFinite(incrementMs) || incrementMs <= 0) {
+    // Enforce the strictly-increasing invariant the doc comment promises: a
+    // zero or negative increment would produce equal or decreasing timestamps,
+    // breaking the S1 total-order event-ordering guarantee and making runs
+    // non-deterministic in subtle ways.
+    throw new Error(`createFixedClock: incrementMs must be a finite positive number, got ${incrementMs}.`);
+  }
 
   return {
     now(): string {
