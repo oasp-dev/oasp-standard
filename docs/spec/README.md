@@ -4,11 +4,15 @@ Normative behavioural specification for OASP v0: the Conversation ≠
 Session model and the six interactions that operate over it
 (`publish`, `migrate`, `drain`, `stream`, `send`, `sendToolResult`) —
 S1, [issue #2](https://github.com/FieldstateNZ/oasp-standard/issues/2)
-— plus the identity and audit layer underneath them: scope resolution,
+— the identity and audit layer underneath them: scope resolution,
 the `Principal` claims contract, on-behalf-of / scope-pinning, and the
 normative `AuditEvent` required-emission set — S2,
-[issue #3](https://github.com/FieldstateNZ/oasp-standard/issues/3).
-Both build directly on the S0 resource schemas
+[issue #3](https://github.com/FieldstateNZ/oasp-standard/issues/3) —
+and the adapter contract that maps a provider into all of the above,
+plus the executable conformance kit that proves any implementation
+against it — S3,
+[issue #4](https://github.com/FieldstateNZ/oasp-standard/issues/4).
+All three build directly on the S0 resource schemas
 ([issue #1](https://github.com/FieldstateNZ/oasp-standard/issues/1))
 under [`packages/schemas/src/resources/`](../../packages/schemas/src/resources/)
 and their generated artifacts under
@@ -30,6 +34,7 @@ also logged in this slice's handback to the dev lead.
 | [`target-version-resolution.md`](./target-version-resolution.md) | The normative table resolving which `AgentDefinition` version a given session context targets when `migrate` runs. |
 | [`scope-and-identity.md`](./scope-and-identity.md) | S2. Scope taxonomy and resolution (most-specific-scope-wins), the profile-override mechanism, the `Principal` claims contract (IdP-agnostic, OIDC-mappable), and the on-behalf-of / scope-pinning containment rule. |
 | [`audit.md`](./audit.md) | S2. The normative minimum `AuditEvent` shape, the required-emission set reconciled against the landed `what` enum, the conformance test ("what did the agent do as {principal} on {date}"), and the emission-vs-delivery/storage/retention boundary. |
+| [`adapters.md`](./adapters.md) | S3. The `AgentProvider` adapter contract — every operation's normative behaviour, the preserve-vs-may-lose boundary (version pinning, pending-tool-call enumeration, event ordering, the normalised Event vocabulary), Anthropic as the reference adapter, OpenAI/Google as reserved slots, and the per-adapter live-provider smoke ritual. Executable counterpart: [`packages/conformance`](../../packages/conformance). |
 
 `interactions.md` notes, per interaction, only that it is audited and
 by which `what` value; the full normative shape of `who` / `what` /
@@ -83,6 +88,10 @@ concept draft is not.
 Per the concept draft's [Conformance](../oasp-v0-concept.md#conformance)
 section, this document targets Level 2 (Server: implements resources +
 interactions) and Level 3 (Adapter: maps a provider preserving
-required semantics) conformance. Level 1 (Client) conformance is
+required semantics) conformance — the latter formalized in
+[`adapters.md`](./adapters.md). Level 1 (Client) conformance is
 satisfied by consuming the interactions and Event vocabulary as
 specified here without needing to implement the server side.
+[`packages/conformance`](../../packages/conformance) is the executable
+kit that checks all three levels deterministically, with no live
+provider keys or network access required.

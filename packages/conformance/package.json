@@ -1,0 +1,24 @@
+{
+  "name": "@oasp/conformance",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Executable OASP v0 conformance kit: the AgentProvider adapter contract, a deterministic mock provider, a minimal reference server, and the Client/Server/Adapter conformance checks — deterministic, CI-runnable, zero live keys, zero network.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@oasp/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

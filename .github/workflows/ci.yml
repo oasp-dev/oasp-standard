@@ -50,4 +50,14 @@ jobs:
           }
 
       - name: Test
+        # `pnpm -r` runs every workspace package's own `test` script — this
+        # picks up `packages/conformance` (@oasp/conformance) automatically
+        # via pnpm-workspace.yaml's `packages/*` pattern, no separate step
+        # needed. Its conformance suite is deterministic and CI-safe by
+        # construction: everything runs against an in-memory mock provider
+        # (packages/conformance/src/mock/), so this step never needs network
+        # access or live provider credentials. The per-adapter live-provider
+        # smoke set (docs/spec/adapters.md § Live-provider smoke) is a
+        # separate, manually-run release ritual — deliberately not wired
+        # into this workflow.
         run: pnpm -r test
