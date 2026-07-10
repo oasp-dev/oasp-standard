@@ -197,6 +197,11 @@ describe('migrate — Stage 2: transcript seeding, non-compounding, degrade-to-f
     const outgoing = await provider.listSessionEvents(conversation.currentSessionId);
     if (!outgoing.ok) return;
     expect(seeded.value.events).toHaveLength(outgoing.value.events.length);
+
+    // A normal, full-seed migrate MUST NOT be flagged degraded — issue #12's
+    // companion assertion: only an induced transcript-fetch failure sets it.
+    const events = server.listAuditEvents().filter((e) => e.what === 'migrate');
+    expect(events[events.length - 1]?.degraded).not.toBe(true);
   });
 
   it('is non-compounding: repeated migrations with no intervening genuine turns keep a constant seed size', async () => {
@@ -238,8 +243,11 @@ describe('migrate — Stage 2: transcript seeding, non-compounding, degrade-to-f
     const seeded = await provider.listSessionEvents(result.value.currentSessionId);
     expect(seeded.ok && seeded.value.events).toEqual([]);
 
+    // Issue #12: a degraded migrate MUST be distinguishable from a normal one
+    // in the audit trail — `outcome: 'success'` alone is ambiguous between the two.
     const events = server.listAuditEvents().filter((e) => e.what === 'migrate');
     expect(events[events.length - 1]?.outcome).toBe('success');
+    expect(events[events.length - 1]?.degraded).toBe(true);
   });
 });
 

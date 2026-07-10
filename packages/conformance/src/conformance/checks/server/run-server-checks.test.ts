@@ -103,6 +103,42 @@ describe('runServerChecks', () => {
     expect(degradeCheck?.passed).toBe(false);
   });
 
+  // Issue #12: checkDegradesToFreshStartOnTranscriptFetchFailure must catch a server
+  // that silently degrades — empty seed, `outcome: 'success'` — but hides the
+  // degradation by never flagging the emitted AuditEvent `degraded: true`. This is
+  // the exact defect the issue reports: a degraded migrate indistinguishable from a
+  // normal one in the audit trail. `migrate` itself is untouched (the real
+  // implementation already sets `degraded` correctly internally); only the
+  // observability surface (`listAuditEvents`) is corrupted, simulating a
+  // non-conformant server whose audit log strips the field before it is read back.
+  it('catches a migrate that degrades but hides it: the emitted AuditEvent is never flagged degraded', async () => {
+    const { server: realServer, controls } = testHarnessFactory();
+    const brokenServer: typeof realServer = {
+      ...realServer,
+      listAuditEvents: () => realServer.listAuditEvents().map((event) => (event.what === 'migrate' ? { ...event, degraded: undefined } : event)),
+    };
+
+    const results = await runServerChecks(brokenServer, controls);
+    const degradeCheck = findCheck(results, 'degrades to an empty');
+    expect(degradeCheck?.passed).toBe(false);
+  });
+
+  // Issue #12: checkNormalMigrateNotFlaggedDegraded must catch the opposite failure
+  // mode — a server that stamps every migrate's AuditEvent degraded: true
+  // unconditionally, which would make the field useless (an auditor could never
+  // trust it to mean anything) even though the check above would pass.
+  it('catches a server that flags every migrate degraded, including a normal full-seed migrate', async () => {
+    const { server: realServer, controls } = testHarnessFactory();
+    const brokenServer: typeof realServer = {
+      ...realServer,
+      listAuditEvents: () => realServer.listAuditEvents().map((event) => (event.what === 'migrate' && event.outcome === 'success' ? { ...event, degraded: true } : event)),
+    };
+
+    const results = await runServerChecks(brokenServer, controls);
+    const notDegradedCheck = findCheck(results, 'NOT flagged degraded');
+    expect(notDegradedCheck?.passed).toBe(false);
+  });
+
   // N3(b): checkPublishDoesNotDisturbLiveConversations must catch a publish that
   // cascades into migrate for conversations pinned to the definition being published.
   it('catches a publish that cascades into migrate, disturbing a live Conversation pinned to a different version', async () => {
