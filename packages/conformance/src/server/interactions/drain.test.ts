@@ -18,6 +18,17 @@ async function buildParkedSession() {
   return { server, sessionId: sessionResult.value.id };
 }
 
+/** Like `buildParkedSession`, but the session is forced (via `MockProviderControls`) to remain `'running'` even once its pending tool call is posted — the exact Issue #13 scenario: a chained tool call re-parking the session right after the enumerated batch resolves. */
+async function buildSessionThatStaysRunningAfterDrain() {
+  const { server, controls } = testHarnessFactory();
+  const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
+  controls.forceNextSessionToStayRunningAfterDrain();
+  const sessionResult = await server.createBuilderSession(definition.id);
+  if (!sessionResult.ok) throw new Error('setup failed');
+  await server.send(sessionResult.value.id, `${mockSentinels.toolUsePrefix}lookup`, callerContextFactory());
+  return { server, sessionId: sessionResult.value.id };
+}
+
 describe('drain', () => {
   it('enumerates and resolves every pending tool call, returning the session to idle', async () => {
     const { server, sessionId } = await buildParkedSession();
@@ -51,6 +62,18 @@ describe('drain', () => {
     await server.send(sessionResult.value.id, `${mockSentinels.toolUsePrefix}lookup`, callerContextFactory());
 
     const result = await server.drain(sessionResult.value.id, callerContextFactory());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('Server.DrainFailed');
+
+    const auditEvents = server.listAuditEvents().filter((e) => e.what === 'drain');
+    expect(auditEvents[0]?.outcome).toBe('failure');
+  });
+
+  it('returns a failure outcome (never a false idle) when the session remains "running" after every enumerated pending tool call is posted', async () => {
+    const { server, sessionId } = await buildSessionThatStaysRunningAfterDrain();
+
+    const result = await server.drain(sessionId, callerContextFactory());
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.DrainFailed');

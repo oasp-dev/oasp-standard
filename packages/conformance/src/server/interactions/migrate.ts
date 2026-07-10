@@ -147,6 +147,10 @@ export async function migrateInteraction(
     state.sessionConversation.set(newSession.id, conversationId);
 
     // Stage 3 — drain to idle before the new session is exposed as currentSessionId.
+    // `runDrainToIdle` fails for ANY non-idle terminal status (not just `'error'`), so
+    // a still-`'running'` newly minted session — e.g. a chained tool call re-parking it
+    // right after its enumerated pending calls resolve — is rejected here, before the
+    // unconditional Stage-4 swap below ever runs.
     const drainResult = await runDrainToIdle(provider, toolExecutor, newSession.id);
     if (!drainResult.ok) {
       // The new Session — and its vaultIds — genuinely exist at this point

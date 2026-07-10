@@ -13,6 +13,7 @@ function buildParkedRecord(): MockSessionRecord {
     idGenerator: createZeroPaddedIdGenerator('session_1'),
     pendingToolCalls: [],
     transcriptFetchShouldFailOnce: false,
+    stayRunningAfterDrain: false,
   };
 }
 
@@ -40,5 +41,14 @@ describe('processSendToolResult', () => {
 
     expect(record.status).toBe('error');
     expect(record.events).toEqual([expect.objectContaining({ type: 'error', recoverable: false })]);
+  });
+
+  it('stays running instead of transitioning to idle when stayRunningAfterDrain is forced, even with no pending calls left', () => {
+    const record = buildParkedRecord();
+    record.stayRunningAfterDrain = true;
+    processSendToolResult(record, { output: 'ok' }, createFixedClock('2026-01-01T00:00:00.000Z'));
+
+    expect(record.status).toBe('running');
+    expect(record.events).toHaveLength(0);
   });
 });

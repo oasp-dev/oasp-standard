@@ -14,6 +14,7 @@ function buildRecord(): MockSessionRecord {
     idGenerator: createZeroPaddedIdGenerator('session_1'),
     pendingToolCalls: [],
     transcriptFetchShouldFailOnce: false,
+    stayRunningAfterDrain: false,
   };
 }
 

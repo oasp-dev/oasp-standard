@@ -30,4 +30,17 @@ export interface MockProviderControls {
 
   /** How many times `createSession` has been called with a `resources` entry matching `resourceKey` (e.g. a `fileId`). Proves resources are genuinely re-mounted, not aliased, across repeated `createSession` calls (e.g. `migrate`'s Stage 1). */
   getResourceMountCount(resourceKey: string): number;
+
+  /**
+   * Causes the session created by the *next* `createSession` call to
+   * remain `'running'` even after every one of its pending tool calls
+   * has been posted via `sendToolResult` — simulating a chained tool
+   * call re-parking the session right after the enumerated batch
+   * resolves (ordinary provider behaviour per `docs/spec/adapters.md`'s
+   * `getSessionStatus` contract, not a rare fault). Used to exercise
+   * `drain`'s (and `migrate`'s Stage 3's) rejection of a still-running
+   * session — it must never report success merely because no error
+   * occurred.
+   */
+  forceNextSessionToStayRunningAfterDrain(): void;
 }

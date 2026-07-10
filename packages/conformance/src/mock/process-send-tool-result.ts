@@ -12,7 +12,12 @@ import type { MockSessionRecord } from './mock-session-record.types';
  * `record` in place: idle once no tool calls remain pending, or a
  * fatal error if `result` is the {@link mockSentinels.induceFatalToolError}
  * sentinel — see `docs/spec/interactions.md` § `drain`'s "executing a
- * blocking tool use fails" path.
+ * blocking tool use fails" path. If `record.stayRunningAfterDrain` was
+ * set at session creation (see `MockProviderControls.forceNextSessionToStayRunningAfterDrain`),
+ * the otherwise-would-be transition to `'idle'` is suppressed instead —
+ * simulating a chained tool call re-parking the session the instant its
+ * enumerated batch resolves, so `drain`'s confirmed-idle check has a
+ * deterministic still-running scenario to reject.
  */
 export function processSendToolResult(record: MockSessionRecord, result: unknown, clock: Clock): void {
   if (
@@ -33,6 +38,7 @@ export function processSendToolResult(record: MockSessionRecord, result: unknown
   }
 
   if (record.pendingToolCalls.length === 0) {
+    if (record.stayRunningAfterDrain) return; // forced: stays 'running' instead of transitioning to idle.
     record.events.push(buildEvent(record.idGenerator, clock, { type: 'status', status: 'idle' }));
     record.status = 'idle';
   }

@@ -266,4 +266,20 @@ describe('migrate — Stage 3: drain to idle', () => {
     const pending = await provider.getPendingToolCalls(result.value.currentSessionId);
     expect(pending).toEqual({ ok: true, value: [] });
   });
+
+  it('rejects the swap when the newly minted session remains "running" after drain, leaving currentSessionId unchanged', async () => {
+    const { server, controls, conversation } = await setUpConversationReadyToMigrate();
+    const outgoingSessionId = conversation.currentSessionId;
+    controls.queuePendingToolCallForNextSession({ toolUseId: 'tooluse_carried', name: 'resume', input: {} });
+    controls.forceNextSessionToStayRunningAfterDrain();
+
+    const result = await server.migrate(conversation.id, callerContextFactory());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('Server.DrainFailed');
+
+    // The still-running newly minted session must never have been swapped in.
+    const stored = server.getConversation(conversation.id);
+    expect(stored?.currentSessionId).toBe(outgoingSessionId);
+  });
 });

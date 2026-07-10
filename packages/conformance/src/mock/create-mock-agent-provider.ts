@@ -21,7 +21,8 @@ import { resourceMountKey } from './resource-mount-key';
  * implementation, plus a {@link MockProviderControls} handle for
  * arranging test scenarios the ordinary contract has no vocabulary for
  * (induced transcript-fetch failure, a session that starts already
- * parked on a tool call).
+ * parked on a tool call, a session that stays `'running'` even after
+ * every one of its pending tool calls has been posted).
  *
  * No network, no timers, no real randomness affecting control flow —
  * every timestamp comes from `options.clock` and the only randomness
@@ -46,6 +47,7 @@ export function createMockAgentProvider(options: MockAgentProviderOptions): {
   let deploymentCounter = 0;
   let sessionCounter = 0;
   let queuedPendingToolCall: PendingToolCall | undefined;
+  let forceStayRunningAfterDrainForNextSession = false;
 
   function buildDeployment(definition: AgentDefinition, environmentId: string, providerAgentId: string): Deployment {
     deploymentCounter += 1;
@@ -114,7 +116,9 @@ export function createMockAgentProvider(options: MockAgentProviderOptions): {
         idGenerator,
         pendingToolCalls: [],
         transcriptFetchShouldFailOnce: false,
+        stayRunningAfterDrain: forceStayRunningAfterDrainForNextSession,
       };
+      forceStayRunningAfterDrainForNextSession = false;
 
       if (queuedPendingToolCall) {
         const toolCall = queuedPendingToolCall;
@@ -203,6 +207,9 @@ export function createMockAgentProvider(options: MockAgentProviderOptions): {
     },
     getResourceMountCount(resourceKey) {
       return resourceMountCounts.get(resourceKey) ?? 0;
+    },
+    forceNextSessionToStayRunningAfterDrain() {
+      forceStayRunningAfterDrainForNextSession = true;
     },
   };
 
