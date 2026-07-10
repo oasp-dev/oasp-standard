@@ -104,7 +104,7 @@ async function checkMigrateNonCompounding(server: ReferenceServer): Promise<Chec
 }
 
 /**
- * `docs/spec/interactions.md` § `drain` (L355-358, L377-381): success MUST
+ * `docs/spec/interactions.md` § `drain` (L355-362): success MUST
  * mean the session is confirmed `idle`, never merely "no error was seen."
  * Exercises both halves of that MUST: the happy path (a parked session
  * drains to idle with its pending tool call resolved), and — the exact

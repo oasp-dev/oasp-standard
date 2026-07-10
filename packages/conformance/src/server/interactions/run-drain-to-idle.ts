@@ -23,7 +23,7 @@ import type { DrainOutcome } from './drain.types';
  * enumerated call has been posted (e.g. a chained tool call re-parked
  * it — `docs/spec/adapters.md`'s `getSessionStatus` contract makes this
  * ordinary provider behaviour, not a rare fault). `docs/spec/interactions.md`
- * § `drain` (L355-358, L377-381) is a MUST that success means confirmed
+ * § `drain` (L355-362) is a MUST that success means confirmed
  * `idle`, never merely "no error was seen" — the caller (`drainInteraction`,
  * and `migrate`'s Stage 3) is what turns either failure into an audited
  * outcome / a rejected swap.
