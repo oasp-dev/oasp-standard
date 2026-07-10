@@ -66,7 +66,17 @@ async function setUpConversationReadyToMigrate() {
   const { server, provider, controls } = testHarnessFactory();
   const definition = await server.createAgentDefinition(
     agentDefinitionInputFactory({
-      tools: [{ type: 'mcp', serverUrl: 'https://mcp.example.com/a', label: 'A', auth: 'credential', permissionPolicy: 'always_allow' }],
+      // The mcp grant exercises credential re-resolution (Stage 1); the
+      // custom 'resume' grant authorizes the pending tool call some Stage-3
+      // tests below carry onto the newly minted session via
+      // `queuePendingToolCallForNextSession` — `drain` now authorizes every
+      // pending call against the pinned AgentDefinition's granted tools
+      // (issue #9), so this override (which replaces the factory's own
+      // default 'lookup' grant entirely) must grant what it actually uses.
+      tools: [
+        { type: 'mcp', serverUrl: 'https://mcp.example.com/a', label: 'A', auth: 'credential', permissionPolicy: 'always_allow' },
+        { type: 'custom', name: 'resume', description: 'Resumes a prior task.', inputSchema: {} },
+      ],
     }),
   );
   server.registerCredential(registerCredentialInputFactory({ mcpServerUrl: 'https://mcp.example.com/a' }));

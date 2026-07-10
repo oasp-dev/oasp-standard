@@ -359,6 +359,20 @@ calls the provider is waiting on, using the Adapter contract's
 
 - A server **MUST** enumerate every blocking `tool_use` the Session is
   currently parked on, via the adapter's `getPendingToolCalls`.
+- Before executing any enumerated blocking tool use, the server **MUST**
+  authorize it against the Session's pinned `AgentDefinition` version:
+  the call's tool **MUST** be present in that version's granted `tools`
+  ([`agentDefinitionSchema`](../../packages/schemas/src/resources/agent-definition.ts)),
+  an MCP-routed call **MUST** resolve to a granted `mcp` tool whose
+  `serverUrl` matches the call's reported origin, and — when that
+  grant's `toolAllowlist` is present — the call's name **MUST** be
+  included in it. A server **MUST** reject (never execute) any call
+  that fails this check; rejection **MUST** be surfaced as a `drain`
+  failure, exactly as any other execution failure is. This
+  authorization is independent of, and does not by itself satisfy, an
+  `mcp` grant's `always_ask` `permissionPolicy` — that approval
+  mechanism is defined by a separate authorization sub-protocol, not by
+  this clause.
 - For each blocking tool use, the server **MUST** execute it and
   **MUST** post its result back to the Session (via
   [`sendToolResult`](#sendtoolresult)) before considering that tool

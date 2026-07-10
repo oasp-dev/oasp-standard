@@ -99,3 +99,119 @@ describe('drain', () => {
     expect(drainEvents[0]).toMatchObject({ outcome: 'success', refs: { sessionId } });
   });
 });
+
+describe('drain — pinned-grant authorization (issue #9)', () => {
+  /** Builds a reference server wired to a spy `ToolExecutor` that records every call it is asked to execute — so a rejected call's "the executor is never invoked" guarantee is directly observable, not just inferred from the outcome. */
+  function buildHarnessWithSpyExecutor() {
+    const clock = createFixedClock('2026-01-01T00:00:00.000Z');
+    const { provider, controls } = createMockAgentProvider({ clock, seed: 1 });
+    const executedToolCalls: string[] = [];
+    const spyExecutor: ToolExecutor = {
+      execute: async (toolCall) => {
+        executedToolCalls.push(toolCall.toolUseId);
+        return ok({ tool: toolCall.name, echoedInput: toolCall.input });
+      },
+    };
+    const server = createReferenceServer({ provider, clock, toolExecutor: spyExecutor });
+    return { server, controls, executedToolCalls };
+  }
+
+  it('rejects a pending call for a tool not present in the pinned AgentDefinition, pre-dispatch — the executor is never invoked', async () => {
+    const { server, controls, executedToolCalls } = buildHarnessWithSpyExecutor();
+    const definition = await server.createAgentDefinition(agentDefinitionInputFactory({ tools: [] }));
+    controls.queuePendingToolCallForNextSession({ toolUseId: 'tooluse_unlisted', name: 'delete_everything', input: {} });
+    const sessionResult = await server.createBuilderSession(definition.id);
+    if (!sessionResult.ok) throw new Error('setup failed');
+
+    const result = await server.drain(sessionResult.value.id, callerContextFactory());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('Server.UnauthorizedToolCall');
+    expect(executedToolCalls).toEqual([]);
+  });
+
+  it('rejects an MCP-routed pending call whose reported serverUrl does not match any granted server, pre-dispatch — the executor is never invoked', async () => {
+    const { server, controls, executedToolCalls } = buildHarnessWithSpyExecutor();
+    const definition = await server.createAgentDefinition(
+      agentDefinitionInputFactory({
+        tools: [{ type: 'mcp', serverUrl: 'https://mcp.example.com/granted', label: 'Granted', auth: 'none', permissionPolicy: 'always_allow' }],
+      }),
+    );
+    controls.queuePendingToolCallForNextSession({
+      toolUseId: 'tooluse_wrong_server',
+      name: 'search',
+      input: {},
+      mcpServerUrl: 'https://attacker.example.com/evil',
+    });
+    const sessionResult = await server.createBuilderSession(definition.id);
+    if (!sessionResult.ok) throw new Error('setup failed');
+
+    const result = await server.drain(sessionResult.value.id, callerContextFactory());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('Server.UnauthorizedToolCall');
+    expect(executedToolCalls).toEqual([]);
+  });
+
+  it('rejects an MCP-routed pending call excluded by the matching grant\'s toolAllowlist, pre-dispatch — the executor is never invoked', async () => {
+    const { server, controls, executedToolCalls } = buildHarnessWithSpyExecutor();
+    const definition = await server.createAgentDefinition(
+      agentDefinitionInputFactory({
+        tools: [
+          {
+            type: 'mcp',
+            serverUrl: 'https://mcp.example.com/granted',
+            label: 'Granted',
+            auth: 'none',
+            permissionPolicy: 'always_allow',
+            toolAllowlist: ['search'],
+          },
+        ],
+      }),
+    );
+    controls.queuePendingToolCallForNextSession({
+      toolUseId: 'tooluse_excluded',
+      name: 'delete_repo',
+      input: {},
+      mcpServerUrl: 'https://mcp.example.com/granted',
+    });
+    const sessionResult = await server.createBuilderSession(definition.id);
+    if (!sessionResult.ok) throw new Error('setup failed');
+
+    const result = await server.drain(sessionResult.value.id, callerContextFactory());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('Server.UnauthorizedToolCall');
+    expect(executedToolCalls).toEqual([]);
+  });
+
+  it('still drains a genuinely granted MCP call to idle, invoking the executor exactly once', async () => {
+    const { server, controls, executedToolCalls } = buildHarnessWithSpyExecutor();
+    const definition = await server.createAgentDefinition(
+      agentDefinitionInputFactory({
+        tools: [
+          {
+            type: 'mcp',
+            serverUrl: 'https://mcp.example.com/granted',
+            label: 'Granted',
+            auth: 'none',
+            permissionPolicy: 'always_allow',
+            toolAllowlist: ['search'],
+          },
+        ],
+      }),
+    );
+    controls.queuePendingToolCallForNextSession({
+      toolUseId: 'tooluse_granted',
+      name: 'search',
+      input: {},
+      mcpServerUrl: 'https://mcp.example.com/granted',
+    });
+    const sessionResult = await server.createBuilderSession(definition.id);
+    if (!sessionResult.ok) throw new Error('setup failed');
+
+    const result = await server.drain(sessionResult.value.id, callerContextFactory());
+    expect(result).toEqual({ ok: true, value: { status: 'idle', resolvedToolUseIds: ['tooluse_granted'] } });
+    expect(executedToolCalls).toEqual(['tooluse_granted']);
+  });
+});

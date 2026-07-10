@@ -157,8 +157,11 @@ export async function migrateInteraction(
     // `runDrainToIdle` fails for ANY non-idle terminal status (not just `'error'`), so
     // a still-`'running'` newly minted session — e.g. a chained tool call re-parking it
     // right after its enumerated pending calls resolve — is rejected here, before the
-    // unconditional Stage-4 swap below ever runs.
-    const drainResult = await runDrainToIdle(provider, toolExecutor, newSession.id);
+    // unconditional Stage-4 swap below ever runs. `definition` (already resolved above,
+    // for Stage 1's vaultIds re-resolution) is reused here too, so a pending tool call
+    // carried onto the newly minted session is authorized against the same grants
+    // (issue #9) — the same current-`tools`-array interpretation flagged above applies.
+    const drainResult = await runDrainToIdle(provider, toolExecutor, definition, newSession.id);
     if (!drainResult.ok) {
       // The new Session — and its vaultIds — genuinely exist at this point
       // (createSession above already succeeded); only drain failed

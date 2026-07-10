@@ -86,7 +86,16 @@ export async function runAuditChecks(server: ReferenceServer): Promise<CheckResu
   const caller = callerContextFactory();
   const definition = await server.createAgentDefinition(
     agentDefinitionInputFactory({
-      tools: [{ type: 'mcp', serverUrl: CREDENTIAL_MCP_SERVER_URL, label: 'Audit-scenario MCP', auth: 'credential', permissionPolicy: 'always_allow' }],
+      // The mcp grant exercises credential attachment (below); the custom
+      // 'lookup' grant is what authorizes the `mockSentinels.toolUsePrefix`
+      // pending tool calls this scenario drains further down — `drain` now
+      // authorizes every pending call against the pinned AgentDefinition's
+      // granted tools (issue #9), so this override (which replaces the
+      // factory's own default 'lookup' grant entirely) must re-declare it.
+      tools: [
+        { type: 'mcp', serverUrl: CREDENTIAL_MCP_SERVER_URL, label: 'Audit-scenario MCP', auth: 'credential', permissionPolicy: 'always_allow' },
+        { type: 'custom', name: 'lookup', description: 'Looks something up.', inputSchema: {} },
+      ],
     }),
   );
   const credential = server.registerCredential(registerCredentialInputFactory({ scope: definition.scope, mcpServerUrl: CREDENTIAL_MCP_SERVER_URL }));

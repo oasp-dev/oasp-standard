@@ -16,6 +16,11 @@ import { runDrainToIdle } from './run-drain-to-idle';
  * `drain` — `docs/spec/interactions.md` § `drain`. The client-facing,
  * audited entry point; the normative recovery logic itself lives in
  * `run-drain-to-idle.ts` so `migrate`'s internal Stage 3 can reuse it.
+ * Resolves the Session's pinned `AgentDefinition` version via
+ * `ServerState` so `runDrainToIdle` can authorize each pending tool
+ * call against its granted tools before dispatch (issue #9) — the
+ * pinned-version reachability this interaction already had (it holds
+ * the `Session`) is exactly what closes that gap.
  */
 export async function drainInteraction(
   state: ServerState,
@@ -28,7 +33,12 @@ export async function drainInteraction(
   const session = state.sessions.get(sessionId);
   if (!session) return err(serverErrors.sessionNotFound(sessionId));
 
-  const outcome = await runDrainToIdle(provider, toolExecutor, sessionId);
+  const definition = state.agentDefinitions.get(session.pinnedAgentVersion.agentDefinitionId);
+  if (!definition) {
+    throw new Error(`Invariant violated: session "${sessionId}" is pinned to an unknown AgentDefinition.`);
+  }
+
+  const outcome = await runDrainToIdle(provider, toolExecutor, definition, sessionId);
 
   emitAuditEvent(state, clock, {
     who: buildAuditWho(caller),

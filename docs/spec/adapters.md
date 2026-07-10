@@ -239,9 +239,13 @@ distinctive guarantee ultimately rests on.
 
 - An adapter **MUST** enumerate every blocking tool use the session is
   currently parked on — not a subset, not just the most recent one —
-  each with its `toolUseId`, `name`, and `input` intact. This is the
-  operation [`drain`](./interactions.md#drain) depends on entirely: a
-  server cannot recover a parked session it cannot fully enumerate.
+  each with its `toolUseId`, `name`, and `input` intact, and — when the
+  adapter can identify it — the `mcpServerUrl` of the MCP server the
+  call was routed through. This is the operation
+  [`drain`](./interactions.md#drain) depends on entirely: a server
+  cannot recover a parked session it cannot fully enumerate, and (per
+  `drain`'s authorization clause) cannot authorize an MCP-routed call it
+  cannot attribute to a granted server.
 - If the session has no pending tool calls (already `idle` or still
   actively producing output with nothing blocking), the adapter
   **MUST** return an empty array rather than an error.
@@ -269,7 +273,12 @@ translation.
    [`createSession`](#createsession) above.
 3. **Pending-tool-call enumeration.** `getPendingToolCalls` **MUST**
    return the complete, accurate set of blocking tool uses — `drain`'s
-   correctness depends on this being total, not best-effort.
+   correctness depends on this being total, not best-effort. When an
+   adapter reports a call's `mcpServerUrl`, it **MUST** be the call's
+   true origin — `drain`'s authorization clause
+   ([interactions.md § `drain`](./interactions.md#drain)) trusts it to
+   match the call against the pinned `AgentDefinition`'s granted `mcp`
+   tools.
 4. **Event ordering.** Per
    [interactions.md § `stream`](./interactions.md#stream), each
    `Event`'s `id` **MUST** be assigned so that it is monotonically
@@ -323,11 +332,18 @@ translation.
    several) as long as relative order and lexicographic `id` monotonicity
    are preserved. Real-time latency characteristics are not part of the
    contract.
-5. **Provider-specific tool-call metadata beyond `toolUseId`/`name`/`input`.**
-   Anything the provider attaches to a tool call beyond those three
+5. **Provider-specific tool-call metadata beyond `toolUseId`/`name`/`input`/`mcpServerUrl`.**
+   Anything the provider attaches to a tool call beyond those four
    fields (invocation confidence scores, provider-internal routing
    hints, etc.) is not required to surface through `PendingToolCall` or
-   the tool-use Events.
+   the tool-use Events. `mcpServerUrl` itself **MAY** still be absent —
+   a `builtin_toolset`/`custom` call has none by definition, and an
+   adapter whose provider integration genuinely cannot attribute an
+   MCP-routed call to a specific server is not required to fabricate
+   one; per [interactions.md § `drain`](./interactions.md#drain)'s
+   authorization clause, an adapter MUST NOT report an `mcpServerUrl`
+   it cannot vouch for merely to get an otherwise-unlisted call past
+   that check.
 6. **The suppression-marker transport itself** (as opposed to the
    guarantee it produces) — see [`seed`](#seed--the-transcript-seeding-transport-normative-resolution-of-a-deferred-s1-detail).
    *How* an adapter tells its provider "treat this as already
