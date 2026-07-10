@@ -103,8 +103,20 @@ async function checkMigrateNonCompounding(server: ReferenceServer): Promise<Chec
     : failed(name, `seeded transcript grew across no-op-content migrations: ${firstCount} -> ${secondCount} -> ${thirdCount} stored events`);
 }
 
-async function checkDrainResolvesPendingToolCalls(server: ReferenceServer): Promise<CheckResult> {
-  const name = 'server: drain enumerates and resolves pending tool calls, returning the session to idle';
+/**
+ * `docs/spec/interactions.md` § `drain` (L355-362): success MUST
+ * mean the session is confirmed `idle`, never merely "no error was seen."
+ * Exercises both halves of that MUST: the happy path (a parked session
+ * drains to idle with its pending tool call resolved), and — the exact
+ * Issue #13 defect — a session forced (via `MockProviderControls`) to
+ * remain `'running'` even after every one of its pending tool calls has
+ * been posted, simulating a chained tool call re-parking it. A server
+ * whose `drain` reports success in that second scenario fails this check;
+ * without it, the portable kit could not catch the very defect it now
+ * exists to certify against.
+ */
+async function checkDrainResolvesPendingToolCalls(server: ReferenceServer, controls: MockProviderControls): Promise<CheckResult> {
+  const name = 'server: drain enumerates and resolves pending tool calls, returning the session to idle — and never reports success while the session remains running';
   const caller = callerContextFactory();
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
   const sessionResult = await server.createBuilderSession(definition.id);
@@ -113,9 +125,19 @@ async function checkDrainResolvesPendingToolCalls(server: ReferenceServer): Prom
 
   const drainResult = await server.drain(sessionResult.value.id, caller);
   if (!drainResult.ok) return failed(name, drainResult.error.message);
-  return drainResult.value.status === 'idle' && drainResult.value.resolvedToolUseIds.length > 0
+  if (drainResult.value.status !== 'idle' || drainResult.value.resolvedToolUseIds.length === 0) {
+    return failed(name, `expected idle with resolved tool uses, got ${JSON.stringify(drainResult.value)}`);
+  }
+
+  controls.forceNextSessionToStayRunningAfterDrain();
+  const stillRunningSession = await server.createBuilderSession(definition.id);
+  if (!stillRunningSession.ok) return failed(name, stillRunningSession.error.message);
+  await server.send(stillRunningSession.value.id, `${mockSentinels.toolUsePrefix}lookup`, caller);
+
+  const stillRunningDrain = await server.drain(stillRunningSession.value.id, caller);
+  return !stillRunningDrain.ok
     ? passed(name)
-    : failed(name, `expected idle with resolved tool uses, got ${JSON.stringify(drainResult.value)}`);
+    : failed(name, `expected drain to fail for a session that remains running after its pending calls are posted, got ${JSON.stringify(stillRunningDrain)}`);
 }
 
 async function checkSendRejectsSupersededSession(server: ReferenceServer): Promise<CheckResult> {
@@ -280,7 +302,7 @@ export async function runServerChecks(server: ReferenceServer, controls: MockPro
     checkVersionPinningPreserved(server),
     checkLineageAppendOnlyOldestFirst(server),
     checkMigrateNonCompounding(server),
-    checkDrainResolvesPendingToolCalls(server),
+    checkDrainResolvesPendingToolCalls(server, controls),
     checkSendRejectsSupersededSession(server),
     checkDegradesToFreshStartOnTranscriptFetchFailure(server, controls),
     checkPublishDoesNotDisturbLiveConversations(server),

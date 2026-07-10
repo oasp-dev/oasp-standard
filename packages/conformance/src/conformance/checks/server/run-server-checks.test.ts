@@ -156,6 +156,27 @@ describe('runServerChecks', () => {
     expect(resourcesCheck?.passed).toBe(false);
   });
 
+  // Issue #13: checkDrainResolvesPendingToolCalls must catch a drain that reports
+  // success while the underlying session remains 'running' — the exact defect the
+  // fix in run-drain-to-idle.ts closes. A lying drain (always reports "idle") proves
+  // the check independently arranges — and detects — the still-running scenario,
+  // rather than merely trusting whatever status the server's own DrainOutcome claims.
+  it('catches a drain that reports success while the underlying session remains running', async () => {
+    const { server: realServer, controls } = testHarnessFactory();
+    const brokenServer: typeof realServer = {
+      ...realServer,
+      drain: async (sessionId, caller) => {
+        const result = await realServer.drain(sessionId, caller);
+        // Violation: lie about reaching idle instead of surfacing the real (failure) outcome.
+        return result.ok ? result : { ok: true, value: { status: 'idle' as const, resolvedToolUseIds: [] } };
+      },
+    };
+
+    const results = await runServerChecks(brokenServer, controls);
+    const drainCheck = findCheck(results, 'drain enumerates and resolves pending tool calls');
+    expect(drainCheck?.passed).toBe(false);
+  });
+
   // N3(d): checkCreateConversationRejectsNeverPublishedDefinition must catch a server
   // that still falls back to pinning a real Conversation to draftVersion — the old,
   // non-conformant behaviour the SHOULD-fix on create-conversation.ts removed.

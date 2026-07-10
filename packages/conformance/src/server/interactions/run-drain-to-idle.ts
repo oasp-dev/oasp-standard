@@ -17,9 +17,16 @@ import type { DrainOutcome } from './drain.types';
  * executes each via the injected `toolExecutor`, posts every result
  * back via `sendToolResult`, then confirms the session reached
  * `'idle'`. Idempotent: a session with no pending tool calls resolves
- * immediately as a no-op success. Returns failure if execution
- * produces a terminal (`status: 'error'`) session — the caller
- * (`drainInteraction`) is what turns that into an audited outcome.
+ * immediately as a no-op success. Returns failure for ANY terminal
+ * status other than `'idle'` — both a terminal `status: 'error'`
+ * session and a session still (or again) `'running'` once every
+ * enumerated call has been posted (e.g. a chained tool call re-parked
+ * it — `docs/spec/adapters.md`'s `getSessionStatus` contract makes this
+ * ordinary provider behaviour, not a rare fault). `docs/spec/interactions.md`
+ * § `drain` (L355-362) is a MUST that success means confirmed
+ * `idle`, never merely "no error was seen" — the caller (`drainInteraction`,
+ * and `migrate`'s Stage 3) is what turns either failure into an audited
+ * outcome / a rejected swap.
  */
 export async function runDrainToIdle(
   provider: AgentProvider,
@@ -46,5 +53,11 @@ export async function runDrainToIdle(
     return err(serverErrors.drainFailed(sessionId, 'Session moved to a terminal error state while executing a blocking tool use.'));
   }
 
-  return ok({ status: statusResult.value, resolvedToolUseIds });
+  if (statusResult.value !== 'idle') {
+    return err(
+      serverErrors.drainFailed(sessionId, `Session is still "${statusResult.value}" after every enumerated pending tool call was posted; drain requires confirmed idle.`),
+    );
+  }
+
+  return ok({ status: 'idle', resolvedToolUseIds });
 }

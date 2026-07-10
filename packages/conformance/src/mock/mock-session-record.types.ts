@@ -19,4 +19,15 @@ export interface MockSessionRecord {
   pendingToolCalls: PendingToolCall[];
   /** One-shot flag: the next `listSessionEvents` call for this session fails, then clears itself. */
   transcriptFetchShouldFailOnce: boolean;
+  /**
+   * Set at session creation (see `MockProviderControls.forceNextSessionToStayRunningAfterDrain`).
+   * When `true`, `processSendToolResult` suppresses the ordinary
+   * all-pending-calls-resolved transition to `'idle'`, leaving `status`
+   * at `'running'` instead — simulating a chained tool call re-parking
+   * the session immediately after the enumerated batch resolves. Used
+   * to exercise `drain`'s (and `migrate`'s Stage 3's) confirmation that
+   * success requires genuinely reaching `'idle'`, not just "no more
+   * calls were pending a moment ago".
+   */
+  stayRunningAfterDrain: boolean;
 }
