@@ -119,7 +119,14 @@ export async function migrateInteraction(
     // non-compounding in this implementation (see the mock provider's
     // `reseedTranscript`, and the migrate conformance check that drives several
     // migrates in a row and asserts the seeded event count stays constant).
+    //
+    // `degraded` records whether this fallback fired, so the Stage-4 success
+    // emission below can make it distinguishable from a normal migrate in the
+    // audit trail — docs/spec/interactions.md § Degrade-to-fresh-start on
+    // transcript-fetch failure now requires exactly that (issue #12: a bare
+    // `outcome: 'success'` alone cannot tell the two apart).
     const transcriptResult = await provider.listSessionEvents(outgoingSessionId);
+    const degraded = !transcriptResult.ok;
     const seedEvents = transcriptResult.ok ? transcriptResult.value.events : [];
 
     const createSessionResult = await provider.createSession({
@@ -184,12 +191,20 @@ export async function migrateInteraction(
     // (`createConversation` and `migrate`): the migrate case previously
     // recorded THAT credentials were re-attached (an emission point
     // existed); this now also names WHICH.
+    //
+    // `degraded` names WHETHER Stage 2's transcript fetch failed and this
+    // migrate proceeded with an empty seed instead of the outgoing Session's
+    // real transcript — docs/spec/interactions.md § Degrade-to-fresh-start on
+    // transcript-fetch failure. Set only when `true`; omitted (never `false`)
+    // on a normal, full-seed migrate, per the schema's absence-is-the-sentinel
+    // convention (see audit-event.ts's `degraded` field doc comment).
     emitAuditEvent(state, clock, {
       who: buildAuditWho(caller),
       what: 'migrate',
       scope: updatedConversation.scope,
       outcome: 'success',
       refs: { conversationId, sessionId: newSession.id, credentialIds: [...vaultIds] },
+      degraded,
     });
 
     return ok(updatedConversation);

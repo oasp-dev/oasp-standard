@@ -252,6 +252,17 @@ stages, executed in order, each with its own normative requirements.
 - A server **MAY** retry the transcript fetch before giving up
   (retry policy is implementation-defined), but it **MUST** eventually
   degrade rather than block or fail `migrate` indefinitely.
+- A migrate that degrades per this rule **MUST** be recorded
+  distinguishably from a normal, full-seed migrate in the `AuditEvent`
+  it emits: the event's `degraded` field (see
+  [`audit.md`'s AuditEvent normative minimum shape](./audit.md#auditevent-normative-minimum-shape))
+  **MUST** be `true` when this rule fired for that call, and **MUST**
+  be omitted (never `true`) on a migrate whose transcript fetch
+  succeeded. Both halves are normative: without the first, a degraded
+  migrate is silent; without the second, the field is meaningless
+  noise an auditor cannot trust. `outcome: 'success'` alone **MUST NOT**
+  be treated as sufficient — a degraded migrate and a normal one both
+  report `outcome: 'success'`, and only `degraded` tells them apart.
 
 > **Rationale:** `migrate` exists to keep a Conversation's identity —
 > its `currentSessionId`, its ability to accept new input — alive

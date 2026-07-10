@@ -28,6 +28,25 @@ describe('auditEventSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts an AuditEvent with no degraded field (the common case for six of the seven interactions, and a normal migrate)', () => {
+    const result = auditEventSchema.safeParse(validAuditEvent);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.degraded).toBeUndefined();
+  });
+
+  it('accepts a migrate AuditEvent with degraded: true (a fresh-start migrate after a transcript-fetch failure)', () => {
+    const result = auditEventSchema.safeParse({ ...validAuditEvent, what: 'migrate', degraded: true });
+    expect(result.success, result.success ? undefined : JSON.stringify(result.error.issues)).toBe(true);
+  });
+
+  it('rejects a non-boolean degraded value', () => {
+    const result = auditEventSchema.safeParse({ ...validAuditEvent, degraded: 'yes' });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.path).toEqual(['degraded']);
+  });
+
   it('accepts a when with a numeric zone offset (not just UTC Z)', () => {
     const result = auditEventSchema.safeParse({ ...validAuditEvent, when: '2026-07-09T14:14:05.000+12:00' });
     expect(result.success, result.success ? undefined : JSON.stringify(result.error.issues)).toBe(true);
@@ -74,5 +93,6 @@ describe('auditEventSchema', () => {
     >();
     expectTypeOf<AuditEvent['outcome']>().toEqualTypeOf<'success' | 'failure'>();
     expectTypeOf<AuditEvent['refs']['credentialIds']>().toEqualTypeOf<string[] | undefined>();
+    expectTypeOf<AuditEvent['degraded']>().toEqualTypeOf<boolean | undefined>();
   });
 });

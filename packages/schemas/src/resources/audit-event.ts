@@ -64,6 +64,12 @@ export const auditEventSchema = z
       .datetime({ offset: true })
       .describe('Timestamp the interaction occurred, as an ISO 8601 date-time. A UTC `Z` designator or a numeric zone offset (e.g. `+12:00`) is accepted, so audit records from any timezone verify against the published schema.'),
     outcome: z.enum(['success', 'failure']).describe('Whether the interaction succeeded or failed.'),
+    degraded: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether this interaction completed in a degraded mode that lost continuity it would otherwise have carried — e.g. a `migrate` whose Stage 2 transcript fetch failed and which proceeded with an empty seed instead (docs/spec/interactions.md § Degrade-to-fresh-start on transcript-fetch failure). Optional and additive: omitted (never `false`) for interactions with no degraded mode, and for a migrate that completed a full transcript seed. Present and `true` only on a degraded migrate. Without this field, a degraded migrate and a normal one both emit `outcome: \'success\'` and are indistinguishable in the audit trail — the defect this field exists to close (issue #12).',
+      ),
     refs: auditRefsSchema.describe('References to the session, conversation, definition, and/or credentials involved.'),
   })
   .describe('The normative audit record emitted for every mutating interaction.')

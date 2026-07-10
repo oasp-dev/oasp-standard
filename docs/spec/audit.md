@@ -32,8 +32,9 @@ the conformance test itself, and (4) the emission/delivery boundary.
 Per [`auditEventSchema`](../../packages/schemas/src/resources/audit-event.ts)
 / [`AuditEvent.json`](../../schemas/v1alpha1/AuditEvent.json), every
 field below is **required** at the top level (`id`, `who`, `what`,
-`scope`, `when`, `outcome`, `refs`); the `refs` object's own sub-fields
-are individually optional (`refs: {}` is a valid value — see
+`scope`, `when`, `outcome`, `refs`) except `degraded`, which is
+optional and additive; the `refs` object's own sub-fields are
+individually optional (`refs: {}` is a valid value — see
 `audit-event.test.ts`'s "accepts refs with every ref omitted" case).
 
 | Field | Shape | Description |
@@ -45,6 +46,7 @@ are individually optional (`refs: {}` is a valid value — see
 | `scope` | `Scope` (**MUST** be present) | "The generalized-ownership attachment point the interaction occurred within," populated per [Scope provenance](#scope-provenance-normative) below (this is the scope the interaction *occurred within*, not the output of the principal-membership resolution algorithm). |
 | `when` | ISO 8601 date-time, offset required | Timestamp the interaction occurred. A `Z` designator or a numeric zone offset is accepted (see the schema's own field description); a bare date with no time component is rejected (`audit-event.test.ts`: "rejects a when that is not an ISO 8601 date-time"). |
 | `outcome` | enum: `success \| failure` | Whether the interaction succeeded or failed. |
+| `degraded` | `boolean`, optional | Whether this interaction completed in a degraded mode that lost continuity it would otherwise have carried. **MUST** be omitted (never `false`) when degradation does not apply to the `what` value, or did not occur. Currently populated only by `migrate` — `true` only on the Stage-4 success emission of a migrate whose Stage 2 transcript fetch failed and which proceeded with an empty seed instead; see [interactions.md's Degrade-to-fresh-start on transcript-fetch failure](./interactions.md#degrade-to-fresh-start-on-transcript-fetch-failure-normative). Added to close the gap where a degraded migrate and a normal one emitted the identical `outcome: 'success'` shape (issue #12). |
 | `refs.sessionId` / `refs.conversationId` / `refs.definitionId` | each `string`, min length 1, optional | "References to the session, conversation, and/or definition involved" — each populated only when that resource is relevant to the interaction (e.g. `publish` touches a `definitionId` but no `sessionId`). |
 | `refs.credentialIds` | `string[]`, each entry min length 1, optional | "Identifiers of the Credentials attached/used in this interaction, so the trail names which credential — not just that one was attached." Populated on `createConversation` (credentials attached at initial creation) and `migrate` (credentials re-attached at Stage 1) — the two points in v0 where `Session.vaultIds` is resolved (see [`credentialSchema`](../../packages/schemas/src/resources/credential.ts)). Omitted, or an empty array, when an interaction attaches no credential. |
 
@@ -102,7 +104,7 @@ value's emission point is already specified, per-interaction, in
 |---|---|---|---|
 | `publish` | [`publish`](./interactions.md#publish) | `definitionId` | `AuditEvent{ what: 'publish', refs: { definitionId } }` |
 | `createConversation` | [`createConversation`](./interactions.md#createconversation) | `conversationId`, `sessionId`, `credentialIds` | `AuditEvent{ what: 'createConversation', refs: { conversationId, sessionId, credentialIds } }` — the initial-creation credential-attach emission point; see [Credential attachment is audited](#credential-attachment-is-audited-createconversation-and-migrate) below |
-| `migrate` | [`migrate`](./interactions.md#migrate-session-upgrade) | `conversationId`, `sessionId`, `credentialIds` (when a Session is minted) | `AuditEvent{ what: 'migrate', refs: { conversationId, sessionId, credentialIds } }`, emitted whether Stage 2 completed via full transcript seed or degrade-to-fresh-start. `credentialIds` is populated only when a new Session is actually minted (its `vaultIds` re-resolved); it is omitted on the "leave in place" no-op and on any pre-mint failure, where nothing was re-attached |
+| `migrate` | [`migrate`](./interactions.md#migrate-session-upgrade) | `conversationId`, `sessionId`, `credentialIds` (when a Session is minted) | `AuditEvent{ what: 'migrate', refs: { conversationId, sessionId, credentialIds }, degraded }`, emitted whether Stage 2 completed via full transcript seed or degrade-to-fresh-start. `credentialIds` is populated only when a new Session is actually minted (its `vaultIds` re-resolved); it is omitted on the "leave in place" no-op and on any pre-mint failure, where nothing was re-attached. `degraded: true` is set only on the Stage-4 success emission of a migrate whose Stage 2 transcript fetch failed; omitted on every other migrate outcome — see [Degrade-to-fresh-start on transcript-fetch failure](./interactions.md#degrade-to-fresh-start-on-transcript-fetch-failure-normative) |
 | `drain` | [`drain`](./interactions.md#drain) | `sessionId` | `AuditEvent{ what: 'drain', refs: { sessionId } }` |
 | `stream` | [`stream`](./interactions.md#stream) | `sessionId` | `AuditEvent{ what: 'stream', refs: { sessionId } }` — a read path, audited anyway; see [Reconciling](#reconciling-the-issues-prose-against-the-what-enum) below |
 | `send` | [`send`](./interactions.md#send) | `sessionId` | `AuditEvent{ what: 'send', refs: { sessionId } }` |

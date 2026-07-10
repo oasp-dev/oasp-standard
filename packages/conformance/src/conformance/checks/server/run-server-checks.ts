@@ -164,13 +164,19 @@ async function checkSendRejectsSupersededSession(server: ReferenceServer): Promi
  * `docs/spec/interactions.md` § Degrade-to-fresh-start on
  * transcript-fetch failure: `migrate` MUST NOT fail because the
  * outgoing Session's transcript fetch failed — it MUST proceed with an
- * empty seed instead. Uses the mock provider's induced-failure control
+ * empty seed instead, AND (issue #12) that degradation MUST be
+ * recorded distinguishably in the emitted `migrate` `AuditEvent`'s
+ * `degraded` field. A conformance kit that only checked the empty seed
+ * would certify silent context loss: the audit trail would show the
+ * exact same `outcome: 'success'` shape as a routine, full-seed
+ * migrate, leaving an auditor unable to answer whether continuity was
+ * actually lost. Uses the mock provider's induced-failure control
  * (`MockProviderControls.induceTranscriptFetchFailureOnce`) to force
  * exactly that failure deterministically — there is no black-box way
  * to provoke a transient adapter failure otherwise.
  */
 async function checkDegradesToFreshStartOnTranscriptFetchFailure(server: ReferenceServer, controls: MockProviderControls): Promise<CheckResult> {
-  const name = 'server: migrate degrades to an empty (fresh-start) seed, rather than failing, when the outgoing transcript fetch fails';
+  const name = 'server: migrate degrades to an empty (fresh-start) seed, rather than failing, when the outgoing transcript fetch fails, and flags the AuditEvent degraded';
   const caller = callerContextFactory();
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
   await server.publish(definition.id, caller);
@@ -187,9 +193,49 @@ async function checkDegradesToFreshStartOnTranscriptFetchFailure(server: Referen
 
   const seeded = await server.listSessionEvents(migrated.value.currentSessionId);
   if (!seeded.ok) return failed(name, seeded.error.message);
-  return seeded.value.events.length === 0
+  if (seeded.value.events.length !== 0) {
+    return failed(name, `expected an empty seed (fresh start) after an induced transcript-fetch failure, got ${seeded.value.events.length} stored events`);
+  }
+
+  const migrateEvent = server
+    .listAuditEvents()
+    .find((e) => e.what === 'migrate' && e.outcome === 'success' && e.refs.conversationId === conversationResult.value.id);
+  if (!migrateEvent) return failed(name, 'expected a successful migrate AuditEvent to have been emitted for this conversation');
+  return migrateEvent.degraded === true
     ? passed(name)
-    : failed(name, `expected an empty seed (fresh start) after an induced transcript-fetch failure, got ${seeded.value.events.length} stored events`);
+    : failed(name, `expected the degraded migrate's AuditEvent to carry degraded: true, got degraded=${JSON.stringify(migrateEvent.degraded)}`);
+}
+
+/**
+ * Companion to {@link checkDegradesToFreshStartOnTranscriptFetchFailure}
+ * (issue #12): a *normal*, full-seed migrate — no induced
+ * transcript-fetch failure — MUST NOT have its `AuditEvent` flagged
+ * `degraded`. Without this check, a server that stamps `degraded: true`
+ * on every migrate unconditionally (rather than only on an actually
+ * degraded one) could pass the check above by accident, defeating the
+ * distinguishability the field exists to provide.
+ */
+async function checkNormalMigrateNotFlaggedDegraded(server: ReferenceServer): Promise<CheckResult> {
+  const name = 'server: a normal, full-seed migrate is NOT flagged degraded in its AuditEvent';
+  const caller = callerContextFactory();
+  const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
+  await server.publish(definition.id, caller);
+  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  if (!conversationResult.ok) return failed(name, conversationResult.error.message);
+  await server.send(conversationResult.value.currentSessionId, 'hello', caller);
+
+  await server.editAgentDefinitionDraft(definition.id);
+  await server.publish(definition.id, caller);
+  const migrated = await server.migrate(conversationResult.value.id, caller);
+  if (!migrated.ok) return failed(name, migrated.error.message);
+
+  const migrateEvent = server
+    .listAuditEvents()
+    .find((e) => e.what === 'migrate' && e.outcome === 'success' && e.refs.conversationId === conversationResult.value.id);
+  if (!migrateEvent) return failed(name, 'expected a successful migrate AuditEvent to have been emitted for this conversation');
+  return migrateEvent.degraded === undefined
+    ? passed(name)
+    : failed(name, `expected a normal migrate's AuditEvent to omit degraded entirely (docs/spec/audit.md: MUST be omitted, never false), got degraded=${JSON.stringify(migrateEvent.degraded)}`);
 }
 
 /**
@@ -286,11 +332,13 @@ async function checkCreateConversationRejectsNeverPublishedDefinition(server: Re
  * repeated migrations, migrate non-compounding (measured via the true
  * stored history), drain resolving pending tool calls, `send`'s
  * current-session enforcement, degrade-to-fresh-start on transcript
- * fetch failure, publish not disturbing live conversations, migrate's
- * resource re-attachment, and never-published target-version handling.
- * This is the "Server" conformance level's executable check — see
- * `verify-self-report.ts` for how a server's `selfReport()` claim of
- * `'server'` is checked against this.
+ * fetch failure (and that degradation being flagged, and ONLY flagged,
+ * on the actually-degraded migrate — issue #12), publish not disturbing
+ * live conversations, migrate's resource re-attachment, and
+ * never-published target-version handling. This is the "Server"
+ * conformance level's executable check — see `verify-self-report.ts`
+ * for how a server's `selfReport()` claim of `'server'` is checked
+ * against this.
  *
  * `controls` is the mock provider's test-only control surface (see
  * `mock/mock-provider-controls.types.ts`) — required here (not
@@ -305,6 +353,7 @@ export async function runServerChecks(server: ReferenceServer, controls: MockPro
     checkDrainResolvesPendingToolCalls(server, controls),
     checkSendRejectsSupersededSession(server),
     checkDegradesToFreshStartOnTranscriptFetchFailure(server, controls),
+    checkNormalMigrateNotFlaggedDegraded(server),
     checkPublishDoesNotDisturbLiveConversations(server),
     checkMigrateReattachesResources(server),
     checkCreateConversationRejectsNeverPublishedDefinition(server),
