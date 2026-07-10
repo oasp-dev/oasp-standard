@@ -1,0 +1,17 @@
+version: 2
+
+# Keeps the pinned action SHAs in ci.yml/pages.yml maintainable: Dependabot
+# opens a PR that bumps the SHA and updates the trailing `# vN` tag comment
+# whenever the upstream release tag moves. The npm ecosystem entry covers
+# the pnpm workspace (root `pnpm-lock.yaml`) via its single lockfile
+# directory — pnpm workspaces don't need one entry per package.
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
