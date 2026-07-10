@@ -233,9 +233,9 @@ async function checkNormalMigrateNotFlaggedDegraded(server: ReferenceServer): Pr
     .listAuditEvents()
     .find((e) => e.what === 'migrate' && e.outcome === 'success' && e.refs.conversationId === conversationResult.value.id);
   if (!migrateEvent) return failed(name, 'expected a successful migrate AuditEvent to have been emitted for this conversation');
-  return migrateEvent.degraded !== true
+  return migrateEvent.degraded === undefined
     ? passed(name)
-    : failed(name, `expected a normal migrate's AuditEvent to omit degraded (or carry a falsy value), got degraded=${JSON.stringify(migrateEvent.degraded)}`);
+    : failed(name, `expected a normal migrate's AuditEvent to omit degraded entirely (docs/spec/audit.md: MUST be omitted, never false), got degraded=${JSON.stringify(migrateEvent.degraded)}`);
 }
 
 /**
