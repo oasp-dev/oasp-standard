@@ -24,6 +24,18 @@ function agentDefinitionVersionKey(ref: Pick<AgentVersionRef, 'agentDefinitionId
  * `AgentDefinitionVersion` snapshot under `definition.id` + `version`,
  * recorded into `state.agentDefinitionVersions`.
  *
+ * The stored snapshot is a `structuredClone`, never a
+ * reference-sharing copy: `definition.tools`/`definition.guardrails`
+ * are mutable arrays the live record keeps using after this call
+ * (`editAgentDefinitionDraftSetup`'s spread even carries the SAME
+ * array instances forward onto the next draft when no override is
+ * passed), so assigning them into the snapshot directly would let a
+ * later in-place mutation of the live record — or of a sibling
+ * version's snapshot — silently rewrite recorded history. The
+ * matching read-side clone lives in {@link getAgentDefinitionVersion};
+ * see there for why both sides clone. "Immutable" here is a runtime
+ * property, not a naming convention.
+ *
  * Called at every point a new version NUMBER is minted —
  * `setup/create-agent-definition.ts` (version 1) and
  * `setup/edit-agent-definition-draft.ts` (every later `draftVersion`
@@ -43,7 +55,7 @@ function agentDefinitionVersionKey(ref: Pick<AgentVersionRef, 'agentDefinitionId
  * legitimate overwrite of an existing entry.
  */
 export function snapshotAgentDefinitionVersion(state: ServerState, definition: AgentDefinition, version: number): void {
-  const snapshot: AgentDefinitionVersion = {
+  const snapshot: AgentDefinitionVersion = structuredClone({
     agentDefinitionId: definition.id,
     version,
     instructions: definition.instructions,
@@ -51,7 +63,7 @@ export function snapshotAgentDefinitionVersion(state: ServerState, definition: A
     model: definition.model,
     tools: definition.tools,
     guardrails: definition.guardrails,
-  };
+  });
   state.agentDefinitionVersions.set(agentDefinitionVersionKey(snapshot), snapshot);
 }
 
@@ -66,7 +78,21 @@ export function snapshotAgentDefinitionVersion(state: ServerState, definition: A
  * never minted through `snapshotAgentDefinitionVersion` — an invariant
  * violation callers should treat as a bug, not a legitimate "not yet
  * published" state (see each call site's own defensive check).
+ *
+ * Returns a `structuredClone` of the stored record, never the stored
+ * record itself: this accessor is exposed through the portable
+ * `ReferenceServer.getAgentDefinitionVersion` surface to conformance
+ * harness code outside this package, and `AgentDefinitionVersion`'s
+ * inferred `tools`/`guardrails` arrays are mutable — a consumer
+ * pushing into a returned snapshot must corrupt only its own copy,
+ * never the store. Cloning on BOTH sides (write above, read here) was
+ * chosen over clone-on-write + `readonly` return types deliberately:
+ * TypeScript's `readonly` is compile-time-only and cannot bind
+ * third-party harness code, whereas the clone makes the store's
+ * immutability a runtime fact; the objects are small and this is
+ * test-kit code, so the copy cost is irrelevant next to the guarantee.
  */
 export function getAgentDefinitionVersion(state: ServerState, ref: AgentVersionRef): AgentDefinitionVersion | undefined {
-  return state.agentDefinitionVersions.get(agentDefinitionVersionKey(ref));
+  const stored = state.agentDefinitionVersions.get(agentDefinitionVersionKey(ref));
+  return stored === undefined ? undefined : structuredClone(stored);
 }

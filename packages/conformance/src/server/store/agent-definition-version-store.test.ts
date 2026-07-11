@@ -66,4 +66,51 @@ describe('agent-definition-version-store', () => {
     expect(getAgentDefinitionVersion(state, { agentDefinitionId: 'agentdef_1', version: 1 })?.instructions).toBe('v1 instructions');
     expect(getAgentDefinitionVersion(state, { agentDefinitionId: 'agentdef_1', version: 2 })?.instructions).toBe('v2 instructions');
   });
+
+  // The round-trip test above cannot distinguish a genuinely decoupled
+  // snapshot from one aliasing the source's arrays — immediately after the
+  // write, an aliased copy reads back identical too. The two tests below are
+  // the regression pair for exactly that defect (dev-lead-required N2): the
+  // store's immutability must be a runtime fact, not a naming convention.
+  it('write-side decoupling: mutating the source definition\'s tools/guardrails in place after snapshotting does not alter the stored snapshot', () => {
+    const state = createServerState();
+    const definition = buildDefinition({
+      tools: [{ type: 'custom', name: 'lookup', description: 'Looks something up.', inputSchema: {} }],
+      guardrails: ['original-guardrail'],
+    });
+    snapshotAgentDefinitionVersion(state, definition, 1);
+
+    // Mutate the SAME array instances the live record keeps using — the
+    // aliasing bug would leak both pushes straight into the stored snapshot.
+    definition.tools.push({ type: 'custom', name: 'injected_after_snapshot', description: 'Added after the snapshot was taken.', inputSchema: {} });
+    definition.guardrails.push('injected-after-snapshot');
+
+    const snapshot = getAgentDefinitionVersion(state, { agentDefinitionId: 'agentdef_1', version: 1 });
+    expect(snapshot?.tools).toEqual([{ type: 'custom', name: 'lookup', description: 'Looks something up.', inputSchema: {} }]);
+    expect(snapshot?.guardrails).toEqual(['original-guardrail']);
+  });
+
+  it('read-side decoupling: mutating a returned snapshot does not alter what the store hands back on re-read', () => {
+    const state = createServerState();
+    snapshotAgentDefinitionVersion(
+      state,
+      buildDefinition({
+        instructions: 'pristine instructions',
+        tools: [{ type: 'custom', name: 'lookup', description: 'Looks something up.', inputSchema: {} }],
+        guardrails: ['pristine-guardrail'],
+      }),
+      1,
+    );
+
+    const first = getAgentDefinitionVersion(state, { agentDefinitionId: 'agentdef_1', version: 1 });
+    if (!first) throw new Error('setup failed');
+    first.instructions = 'tampered';
+    first.tools.push({ type: 'custom', name: 'tampered_tool', description: 'Pushed into a returned snapshot.', inputSchema: {} });
+    first.guardrails.push('tampered-guardrail');
+
+    const second = getAgentDefinitionVersion(state, { agentDefinitionId: 'agentdef_1', version: 1 });
+    expect(second?.instructions).toBe('pristine instructions');
+    expect(second?.tools).toEqual([{ type: 'custom', name: 'lookup', description: 'Looks something up.', inputSchema: {} }]);
+    expect(second?.guardrails).toEqual(['pristine-guardrail']);
+  });
 });

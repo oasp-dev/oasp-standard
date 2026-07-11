@@ -1,6 +1,7 @@
 import { agentDefinitionInputFactory } from '../../../factories/agent-definition-input-factory';
 import { callerContextFactory } from '../../../factories/caller-context-factory';
 import { createConversationInputFactory } from '../../../factories/create-conversation-input-factory';
+import { registerCredentialInputFactory } from '../../../factories/register-credential-input-factory';
 import type { MockProviderControls } from '../../../mock/mock-provider-controls.types';
 import type { ReferenceServer } from '../../../server/reference-server.types';
 import { mockSentinels } from '../../../mock/mock-sentinels';
@@ -247,6 +248,111 @@ async function checkDrainRejectsUnauthorizedToolCalls(server: ReferenceServer, c
   return passed(name);
 }
 
+/**
+ * `docs/spec/target-version-resolution.md` § Resolving to content, not
+ * only a pointer (issue #10): `drain`'s pre-dispatch authorization MUST
+ * resolve the pinned version's OWN granted tools from its immutable
+ * content snapshot, never from the live, still-editable
+ * `AgentDefinition`. Publishes v1 granting one custom tool, parks a
+ * v1-pinned real Conversation's session on a pending call for exactly
+ * that tool, then — deliberately WITHOUT publishing — edits the draft
+ * to revoke every grant, and asserts `drain` still succeeds: the
+ * pinned v1's grants are what authorize the call, whatever the live
+ * draft now says. A live-reading server (the pre-#10 defect) rejects
+ * the call as unauthorized here and fails this check — and passes
+ * every OTHER check in this file, because no other check interposes a
+ * draft content edit between pinning a session and driving a pinned
+ * interaction against it (`checkDrainRejectsUnauthorizedToolCalls`
+ * never edits after pinning; `checkPublishDoesNotDisturbLiveConversations`
+ * only asserts the stored integer pin). This check is what makes the
+ * spec's snapshot-resolution MUST portably certifiable rather than
+ * merely asserted in this reference implementation's own unit tests.
+ */
+async function checkDrainVersionIsolation(server: ReferenceServer): Promise<CheckResult> {
+  const name = "server: drain authorizes against the pinned version's own snapshotted grants — an unpublished draft edit revoking them cannot affect a session pinned to the published version";
+  const caller = callerContextFactory();
+  const definition = await server.createAgentDefinition(
+    agentDefinitionInputFactory({ tools: [{ type: 'custom', name: 'resume', description: 'Resumes a prior task.', inputSchema: {} }] }),
+  );
+  await server.publish(definition.id, caller);
+  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  if (!conversationResult.ok) return failed(name, conversationResult.error.message);
+  const sessionId = conversationResult.value.currentSessionId;
+
+  // Park the v1-pinned session on a pending call for the tool v1 grants.
+  await server.send(sessionId, `${mockSentinels.toolUsePrefix}resume`, caller);
+
+  // Revoke every grant on the draft (v2) — deliberately NOT published: the
+  // Conversation/Session above remain pinned to published v1.
+  const edited = await server.editAgentDefinitionDraft(definition.id, { tools: [] });
+  if (!edited.ok) return failed(name, edited.error.message);
+
+  const drained = await server.drain(sessionId, caller);
+  if (!drained.ok) {
+    return failed(
+      name,
+      `expected the v1-pinned session to drain using v1's own snapshotted grants despite the unpublished draft revoking them (a live-reading server rejects here), got: ${drained.error.message}`,
+    );
+  }
+  return drained.value.status === 'idle' ? passed(name) : failed(name, `expected idle, got ${JSON.stringify(drained.value)}`);
+}
+
+/**
+ * Companion to {@link checkDrainVersionIsolation}, for `migrate`'s
+ * Stage 1 (`docs/spec/interactions.md`): the newly minted session's
+ * `vaultIds` MUST be re-resolved against the TARGET version's own
+ * snapshotted `mcp` tool grants — never against whatever the live
+ * `AgentDefinition` holds when `migrate` runs. Builds three versions
+ * with pairwise-disjoint credential-requiring grants — v1 (the
+ * outgoing pin), v2 (published: the migrate target), v3 (drafted but
+ * deliberately never published: what the LIVE definition holds at
+ * migrate time) — and asserts the minted session resolves exactly
+ * v2's credential. A live-reading server resolves v3's credential
+ * instead and fails; the explicit not-v3 assertion distinguishes that
+ * exact defect from any other wrong answer in the failure message.
+ */
+async function checkMigrateVersionIsolation(server: ReferenceServer): Promise<CheckResult> {
+  const name = "server: migrate re-resolves vaultIds from the TARGET version's snapshotted grants — never from a later unpublished draft's live content";
+  const caller = callerContextFactory();
+  const definition = await server.createAgentDefinition(
+    agentDefinitionInputFactory({
+      tools: [{ type: 'mcp', serverUrl: 'https://mcp.example.com/isolation-v1', label: 'V1', auth: 'credential', permissionPolicy: 'always_allow' }],
+    }),
+  );
+  server.registerCredential(registerCredentialInputFactory({ mcpServerUrl: 'https://mcp.example.com/isolation-v1' }));
+  await server.publish(definition.id, caller);
+  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  if (!conversationResult.ok) return failed(name, conversationResult.error.message);
+
+  // v2 — the published migrate target: a disjoint grant/credential.
+  const credentialV2 = server.registerCredential(registerCredentialInputFactory({ mcpServerUrl: 'https://mcp.example.com/isolation-v2' }));
+  const v2 = await server.editAgentDefinitionDraft(definition.id, {
+    tools: [{ type: 'mcp', serverUrl: 'https://mcp.example.com/isolation-v2', label: 'V2', auth: 'credential', permissionPolicy: 'always_allow' }],
+  });
+  if (!v2.ok) return failed(name, v2.error.message);
+  await server.publish(definition.id, caller);
+
+  // v3 — drafted but never published: a third disjoint grant/credential the
+  // LIVE AgentDefinition carries while the migrate target remains v2.
+  const credentialV3 = server.registerCredential(registerCredentialInputFactory({ mcpServerUrl: 'https://mcp.example.com/isolation-v3' }));
+  const v3 = await server.editAgentDefinitionDraft(definition.id, {
+    tools: [{ type: 'mcp', serverUrl: 'https://mcp.example.com/isolation-v3', label: 'V3', auth: 'credential', permissionPolicy: 'always_allow' }],
+  });
+  if (!v3.ok) return failed(name, v3.error.message);
+
+  const migrated = await server.migrate(conversationResult.value.id, caller);
+  if (!migrated.ok) return failed(name, migrated.error.message);
+
+  const newSession = server.getSession(migrated.value.currentSessionId);
+  if (!newSession) return failed(name, 'newly minted session not retrievable via getSession');
+  if (JSON.stringify(newSession.vaultIds) === JSON.stringify([credentialV3.id])) {
+    return failed(name, `newly minted session resolved the LIVE unpublished draft's (v3) credential instead of the pinned target version's (v2) — the live-reading defect issue #10 closes`);
+  }
+  return JSON.stringify(newSession.vaultIds) === JSON.stringify([credentialV2.id])
+    ? passed(name)
+    : failed(name, `expected the target version's own credential [${credentialV2.id}], got ${JSON.stringify(newSession.vaultIds)}`);
+}
+
 async function checkSendRejectsSupersededSession(server: ReferenceServer): Promise<CheckResult> {
   const name = 'server: send rejects a session superseded by migrate';
   const caller = callerContextFactory();
@@ -438,15 +544,17 @@ async function checkCreateConversationRejectsNeverPublishedDefinition(server: Re
  * version pinning preserved, lineage append-only oldest-first across
  * repeated migrations, migrate non-compounding (measured via the true
  * stored history), drain resolving pending tool calls, drain's
- * pre-dispatch pinned-grant authorization (issue #9), `send`'s
- * current-session enforcement, degrade-to-fresh-start on transcript
- * fetch failure (and that degradation being flagged, and ONLY flagged,
- * on the actually-degraded migrate — issue #12), publish not disturbing
- * live conversations, migrate's resource re-attachment, and
- * never-published target-version handling. This is the "Server"
- * conformance level's executable check — see `verify-self-report.ts`
- * for how a server's `selfReport()` claim of `'server'` is checked
- * against this.
+ * pre-dispatch pinned-grant authorization (issue #9), version isolation
+ * — drain authorizing and migrate re-resolving credentials against the
+ * pinned/target version's immutable content snapshot, never the live
+ * `AgentDefinition` (issue #10) — `send`'s current-session enforcement,
+ * degrade-to-fresh-start on transcript fetch failure (and that
+ * degradation being flagged, and ONLY flagged, on the actually-degraded
+ * migrate — issue #12), publish not disturbing live conversations,
+ * migrate's resource re-attachment, and never-published target-version
+ * handling. This is the "Server" conformance level's executable check —
+ * see `verify-self-report.ts` for how a server's `selfReport()` claim
+ * of `'server'` is checked against this.
  *
  * `controls` is the mock provider's test-only control surface (see
  * `mock/mock-provider-controls.types.ts`) — required here (not
@@ -460,6 +568,8 @@ export async function runServerChecks(server: ReferenceServer, controls: MockPro
     checkMigrateNonCompounding(server),
     checkDrainResolvesPendingToolCalls(server, controls),
     checkDrainRejectsUnauthorizedToolCalls(server, controls),
+    checkDrainVersionIsolation(server),
+    checkMigrateVersionIsolation(server),
     checkSendRejectsSupersededSession(server),
     checkDegradesToFreshStartOnTranscriptFetchFailure(server, controls),
     checkNormalMigrateNotFlaggedDegraded(server),
