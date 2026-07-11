@@ -3,6 +3,7 @@ import type { AgentProvider } from '../../adapter/agent-provider.types';
 import type { Clock } from '../../shared/clock.types';
 import { err, ok, type Result } from '../../shared/result';
 import type { DomainError } from '../../shared/domain-error.types';
+import { buildAuditEvidence } from '../audit/build-audit-evidence';
 import { emitAuditEvent } from '../audit/emit-audit-event';
 import { resolveVaultIds } from '../credential/resolve-vault-ids';
 import { serverErrors } from '../server-errors';
@@ -62,14 +63,22 @@ import type { CreateConversationInput } from './create-conversation-input.types'
  * § Relationship to `createConversation` is now the spec-level home for
  * this same resolution.
  *
- * Precondition failures where no primary resource is yet identified
- * (`definitionNotFound`) emit no `AuditEvent` at all, mirroring
- * `publish`/`migrate`/`drain`'s established pattern for "target not
- * found." Once the target `AgentDefinition` is identified, every other
- * outcome — including failure — emits one `AuditEvent` using
- * `input.scope` (the same value the resulting Conversation's `scope`
- * would carry on success), per the required-emission set's "every
- * invocation," not "every successful invocation."
+ * **Not-found precondition (issue #11):** `definitionNotFound` now also
+ * emits an `AuditEvent` — `outcome: 'not_found'`, `refs.definitionId`
+ * naming the caller-asserted (nonexistent) target — before returning,
+ * rather than returning silently as it did before this slice (which
+ * mirrored `publish`/`migrate`/`drain`'s then-identical gap for "target
+ * not found"; all seven interactions close it together, see
+ * `docs/spec/audit.md` § Not-found preconditions). Unlike the other six
+ * interactions, `createConversation`'s `scope` here is `input.scope` —
+ * caller-supplied, not resource-derived — so it remains populatable even
+ * on this `not_found` outcome, the one exception `audit-event.ts`'s
+ * `scope` doc comment calls out. Once the target `AgentDefinition` is
+ * identified, every other outcome — including failure — emits one
+ * `AuditEvent` using `input.scope` (the same value the resulting
+ * Conversation's `scope` would carry on success), per the
+ * required-emission set's "every invocation," not "every successful
+ * invocation."
  */
 export async function createConversationSetup(
   state: ServerState,
@@ -77,19 +86,28 @@ export async function createConversationSetup(
   clock: Clock,
   input: CreateConversationInput,
 ): Promise<Result<Conversation, DomainError>> {
-  const definition = state.agentDefinitions.get(input.agentDefinitionId);
-  if (!definition) return err(serverErrors.definitionNotFound(input.agentDefinitionId));
-
   const who = { principal: input.initiatingPrincipal };
+
+  const definition = state.agentDefinitions.get(input.agentDefinitionId);
+  if (!definition) {
+    emitAuditEvent(state, clock, {
+      who,
+      what: 'createConversation',
+      scope: input.scope,
+      outcome: 'not_found',
+      refs: { definitionId: input.agentDefinitionId },
+    });
+    return err(serverErrors.definitionNotFound(input.agentDefinitionId));
+  }
 
   const deployment = state.deployments.get(definition.id);
   if (!deployment) {
-    emitAuditEvent(state, clock, { who, what: 'createConversation', scope: input.scope, outcome: 'failure', refs: {} });
+    emitAuditEvent(state, clock, { who, what: 'createConversation', scope: input.scope, outcome: 'failure', refs: { definitionId: definition.id } });
     return err(serverErrors.notDeployed(definition.id));
   }
 
   if (definition.publishedVersion === null) {
-    emitAuditEvent(state, clock, { who, what: 'createConversation', scope: input.scope, outcome: 'failure', refs: {} });
+    emitAuditEvent(state, clock, { who, what: 'createConversation', scope: input.scope, outcome: 'failure', refs: { definitionId: definition.id } });
     return err(serverErrors.neverPublished(definition.id));
   }
   const pinnedAgentVersion: AgentVersionRef = { agentDefinitionId: definition.id, version: definition.publishedVersion };
@@ -105,7 +123,14 @@ export async function createConversationSetup(
     vaultIds,
   });
   if (!sessionResult.ok) {
-    emitAuditEvent(state, clock, { who, what: 'createConversation', scope: input.scope, outcome: 'failure', refs: {} });
+    emitAuditEvent(state, clock, {
+      who,
+      what: 'createConversation',
+      scope: input.scope,
+      outcome: 'failure',
+      refs: { definitionId: definition.id },
+      evidence: buildAuditEvidence({ agentVersionRef: pinnedAgentVersion }),
+    });
     return err(serverErrors.adapterFailure('createSession', sessionResult.error.message));
   }
 
@@ -131,6 +156,7 @@ export async function createConversationSetup(
     scope: conversation.scope,
     outcome: 'success',
     refs: { conversationId, sessionId: sessionResult.value.id, credentialIds: [...vaultIds] },
+    evidence: buildAuditEvidence({ agentVersionRef: pinnedAgentVersion }),
   });
 
   return ok(conversation);

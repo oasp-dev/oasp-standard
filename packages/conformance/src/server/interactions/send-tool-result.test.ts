@@ -43,6 +43,17 @@ describe('sendToolResult', () => {
     expect(result.error.code).toBe('Server.SessionNotFound');
   });
 
+  // Issue #11 Tranche A: a not-found probe MUST NOT vanish from the trail.
+  it('emits a not_found AuditEvent (not silence) naming the caller-asserted sessionId, with no fabricated scope', async () => {
+    const { server } = testHarnessFactory();
+    await server.sendToolResult('does_not_exist', 'tooluse_1', {}, callerContextFactory());
+
+    const events = server.listAuditEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ what: 'sendToolResult', outcome: 'not_found', refs: { sessionId: 'does_not_exist' } });
+    expect(events[0] && 'scope' in events[0]).toBe(false);
+  });
+
   it('emits an AuditEvent{ what: "sendToolResult" } with outcome reflecting whether the toolUseId resolved', async () => {
     const { server } = testHarnessFactory();
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory());

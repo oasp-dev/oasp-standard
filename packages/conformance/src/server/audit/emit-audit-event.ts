@@ -24,7 +24,12 @@ export function emitAuditEvent(state: ServerState, clock: Clock, input: EmitAudi
     id: `audit_${state.counters.audit}`,
     who: input.who,
     what: input.what,
-    scope: input.scope,
+    // Omitted entirely (never `scope: undefined`) unless the caller passed a
+    // real value — required for every `outcome` except `not_found` (the
+    // schema's own `.check()` enforces that; see `audit-event.ts`), where no
+    // primary resource was ever identified to source a scope from
+    // (docs/spec/audit.md § Not-found preconditions, issue #11).
+    ...(input.scope !== undefined ? { scope: input.scope } : {}),
     when: clock.now(),
     outcome: input.outcome,
     // Omitted (never `false`) unless the caller explicitly passed `true` —
@@ -33,6 +38,10 @@ export function emitAuditEvent(state: ServerState, clock: Clock, input: EmitAudi
     // stamping every non-degraded AuditEvent with an explicit `false`.
     ...(input.degraded === true ? { degraded: true as const } : {}),
     refs: input.refs,
+    // Omitted entirely (never `evidence: {}`) unless the caller built a
+    // non-empty evidence object via `buildAuditEvidence` — same
+    // absence-is-the-sentinel convention as `degraded` above.
+    ...(input.evidence !== undefined ? { evidence: input.evidence } : {}),
   };
   const validated = auditEventSchema.parse(candidate);
   state.auditLog.push(validated);

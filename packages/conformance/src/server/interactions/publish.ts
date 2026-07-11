@@ -16,6 +16,15 @@ import type { ServerState } from '../store/server-state';
  * intervening draft edit is a no-op (still emits an audit event, since
  * the required-emission set is "every invocation," not "every
  * mutating invocation").
+ *
+ * The `definitionNotFound` precondition failure below also emits an
+ * `AuditEvent` — `outcome: 'not_found'`, `refs.definitionId` naming the
+ * caller-asserted (nonexistent) target, `scope` omitted (no
+ * `AgentDefinition` was ever identified to source one from) — rather
+ * than returning silently. `docs/spec/audit.md` § Not-found
+ * preconditions (issue #11) closes this: a probe against an unknown
+ * `definitionId` MUST leave a distinguishable trace, the same as any
+ * other invocation of one of the seven interactions.
  */
 export async function publishInteraction(
   state: ServerState,
@@ -24,7 +33,10 @@ export async function publishInteraction(
   caller: CallerContext,
 ): Promise<Result<AgentDefinition, DomainError>> {
   const definition = state.agentDefinitions.get(definitionId);
-  if (!definition) return err(serverErrors.definitionNotFound(definitionId));
+  if (!definition) {
+    emitAuditEvent(state, clock, { who: buildAuditWho(caller), what: 'publish', outcome: 'not_found', refs: { definitionId } });
+    return err(serverErrors.definitionNotFound(definitionId));
+  }
 
   const updated: AgentDefinition =
     definition.publishedVersion === definition.draftVersion

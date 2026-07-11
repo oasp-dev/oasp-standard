@@ -3,6 +3,7 @@ import type { AgentProvider } from '../../adapter/agent-provider.types';
 import type { Clock } from '../../shared/clock.types';
 import type { DomainError } from '../../shared/domain-error.types';
 import { err, ok, type Result } from '../../shared/result';
+import { buildAuditEvidence } from '../audit/build-audit-evidence';
 import { buildAuditWho } from '../audit/build-audit-who';
 import { emitAuditEvent } from '../audit/emit-audit-event';
 import type { CallerContext } from '../caller-context.types';
@@ -47,6 +48,17 @@ import { runDrainToIdle } from './run-drain-to-idle';
  * invocation). A stricter reading of "MUST emit... for every
  * invocation of each of the seven interactions" could conclude the
  * opposite; this is a genuine ambiguity the spec text does not close.
+ *
+ * **Not-found preconditions (issue #11):** both `conversationNotFound`
+ * checks below — before `withConversationLock` is even entered, and
+ * again just inside it (a defensive re-check; nothing in v0 deletes a
+ * `Conversation` between the two, so the second is unreachable through
+ * this reference server's own public contract, but is not provably so
+ * for a third-party implementation) — now emit an `AuditEvent` with
+ * `outcome: 'not_found'` before returning, instead of returning
+ * silently. `scope` is omitted on both: no `Conversation` was ever
+ * identified to source one from. See `docs/spec/audit.md` § Not-found
+ * preconditions.
  */
 export async function migrateInteraction(
   state: ServerState,
@@ -57,12 +69,16 @@ export async function migrateInteraction(
   caller: CallerContext,
 ): Promise<Result<Conversation, DomainError>> {
   if (!state.conversations.has(conversationId)) {
+    emitAuditEvent(state, clock, { who: buildAuditWho(caller), what: 'migrate', outcome: 'not_found', refs: { conversationId } });
     return err(serverErrors.conversationNotFound(conversationId));
   }
 
   return withConversationLock(state, conversationId, async () => {
     const conversation = state.conversations.get(conversationId);
-    if (!conversation) return err(serverErrors.conversationNotFound(conversationId));
+    if (!conversation) {
+      emitAuditEvent(state, clock, { who: buildAuditWho(caller), what: 'migrate', outcome: 'not_found', refs: { conversationId } });
+      return err(serverErrors.conversationNotFound(conversationId));
+    }
 
     const definition = state.agentDefinitions.get(conversation.pinnedAgentVersion.agentDefinitionId);
     if (!definition) {
@@ -76,6 +92,7 @@ export async function migrateInteraction(
         scope: conversation.scope,
         outcome: 'success',
         refs: { conversationId, sessionId: conversation.currentSessionId },
+        evidence: buildAuditEvidence({ agentVersionRef: conversation.pinnedAgentVersion }),
       });
       return ok(conversation);
     };
@@ -100,6 +117,7 @@ export async function migrateInteraction(
         scope: conversation.scope,
         outcome: 'failure',
         refs: { conversationId, sessionId: outgoingSessionId },
+        evidence: buildAuditEvidence({ agentVersionRef: target }),
       });
       return err(serverErrors.notDeployed(definition.id));
     }
@@ -144,6 +162,7 @@ export async function migrateInteraction(
         scope: conversation.scope,
         outcome: 'failure',
         refs: { conversationId, sessionId: outgoingSessionId },
+        evidence: buildAuditEvidence({ agentVersionRef: target }),
       });
       return err(serverErrors.adapterFailure('createSession', createSessionResult.error.message));
     }
@@ -174,6 +193,7 @@ export async function migrateInteraction(
         scope: conversation.scope,
         outcome: 'failure',
         refs: { conversationId, sessionId: newSession.id, credentialIds: [...vaultIds] },
+        evidence: buildAuditEvidence({ agentVersionRef: target }),
       });
       return err(drainResult.error);
     }
@@ -208,6 +228,7 @@ export async function migrateInteraction(
       outcome: 'success',
       refs: { conversationId, sessionId: newSession.id, credentialIds: [...vaultIds] },
       degraded,
+      evidence: buildAuditEvidence({ agentVersionRef: target }),
     });
 
     return ok(updatedConversation);

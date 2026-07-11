@@ -45,6 +45,27 @@ describe('createConversationSetup (via ReferenceServer.createConversation)', () 
     expect(result.error.code).toBe('Server.DefinitionNotFound');
   });
 
+  // Issue #11 Tranche A: a not-found probe MUST NOT vanish from the trail —
+  // this was the one interaction where the not-found precondition returned
+  // BEFORE any resource was identified at all, yet still has a caller-supplied
+  // `scope` (unlike the other six interactions) to attach to the event.
+  it('emits a not_found AuditEvent (not silence) naming the caller-asserted agentDefinitionId, carrying the caller-supplied scope', async () => {
+    const { server } = testHarnessFactory();
+    const input = createConversationInputFactory('does_not_exist');
+
+    const result = await server.createConversation(input);
+    expect(result.ok).toBe(false);
+
+    const events = server.listAuditEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      what: 'createConversation',
+      outcome: 'not_found',
+      scope: input.scope,
+      refs: { definitionId: 'does_not_exist' },
+    });
+  });
+
   it('emits a createConversation AuditEvent naming the conversation, session, and initiating principal (S4: closes the v0 gap)', async () => {
     const { server } = testHarnessFactory();
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
@@ -63,6 +84,7 @@ describe('createConversationSetup (via ReferenceServer.createConversation)', () 
       scope: result.value.scope,
       outcome: 'success',
       refs: { conversationId: result.value.id, sessionId: result.value.currentSessionId },
+      evidence: { agentVersionRef: result.value.pinnedAgentVersion },
     });
   });
 
