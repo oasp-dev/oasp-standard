@@ -149,6 +149,68 @@ describe('migrate — Stage 1: mint session at target version', () => {
     expect(newSession?.vaultIds).toHaveLength(1);
     expect(newSession?.vaultIds).toEqual(outgoingSession?.vaultIds); // same credential still matches; re-resolved, not aliased
   });
+
+  // Issue #10: before the per-version content snapshot store existed, Stage 1
+  // re-resolved vaultIds against the LIVE `AgentDefinition.tools` — which,
+  // before this slice, could never actually differ between the outgoing and
+  // target version, because `editAgentDefinitionDraftSetup` only ever bumped
+  // the integer and never changed content (see that setup helper's pre-#10
+  // doc comment). This test exercises a migrate where v1 and v2 grant
+  // MATERIALLY DIFFERENT — entirely disjoint — mcp servers/credentials, AND
+  // leaves an UNPUBLISHED v3 draft edit in place (granting yet a THIRD,
+  // disjoint server) before calling migrate — so the migrate-to-v2 call's
+  // target (v2, published) and the LIVE `AgentDefinition` (v3, draft-only)
+  // genuinely diverge at the moment migrate runs. A live-read implementation
+  // (the pre-#10 bug) would resolve v3's credential here; a snapshot-based
+  // one resolves v2's — this is what actually discriminates the fix from the
+  // bug, not just "content differs somewhere."
+  it('resolves a MATERIALLY DIFFERENT tool grant/credential for the target version, not the outgoing version\'s — and not a later unpublished draft\'s either (AC#6: a genuine content change across versions)', async () => {
+    const { server } = testHarnessFactory();
+    const definition = await server.createAgentDefinition(
+      agentDefinitionInputFactory({
+        tools: [{ type: 'mcp', serverUrl: 'https://mcp.example.com/v1-only', label: 'V1', auth: 'credential', permissionPolicy: 'always_allow' }],
+      }),
+    );
+    const credentialV1 = server.registerCredential(registerCredentialInputFactory({ mcpServerUrl: 'https://mcp.example.com/v1-only' }));
+    await server.publish(definition.id, callerContextFactory());
+
+    const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+    if (!conversationResult.ok) throw new Error('setup failed');
+    const outgoingSession = server.getSession(conversationResult.value.currentSessionId);
+    expect(outgoingSession?.vaultIds).toEqual([credentialV1.id]);
+
+    // v2 grants a DIFFERENT mcp server entirely — v1's grant is gone, not merely added-to.
+    const credentialV2 = server.registerCredential(registerCredentialInputFactory({ mcpServerUrl: 'https://mcp.example.com/v2-only' }));
+    await server.editAgentDefinitionDraft(definition.id, {
+      tools: [{ type: 'mcp', serverUrl: 'https://mcp.example.com/v2-only', label: 'V2', auth: 'credential', permissionPolicy: 'always_allow' }],
+    });
+    await server.publish(definition.id, callerContextFactory());
+
+    // v3: a THIRD, disjoint grant — drafted but deliberately never published.
+    // The migrate below targets v2 (the current publishedVersion); the LIVE
+    // AgentDefinition is now v3. If migrate resolved live content instead of
+    // v2's snapshot, it would wrongly pick up v3's credential here.
+    const credentialV3 = server.registerCredential(registerCredentialInputFactory({ mcpServerUrl: 'https://mcp.example.com/v3-draft-only' }));
+    await server.editAgentDefinitionDraft(definition.id, {
+      tools: [{ type: 'mcp', serverUrl: 'https://mcp.example.com/v3-draft-only', label: 'V3', auth: 'credential', permissionPolicy: 'always_allow' }],
+    });
+    expect(server.getAgentDefinition(definition.id)?.publishedVersion).toBe(2); // v3 is drafted, not published
+
+    const result = await server.migrate(conversationResult.value.id, callerContextFactory());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.pinnedAgentVersion.version).toBe(2);
+    const newSession = server.getSession(result.value.currentSessionId);
+    expect(newSession?.vaultIds).toEqual([credentialV2.id]);
+    expect(newSession?.vaultIds).not.toEqual(outgoingSession?.vaultIds);
+    expect(newSession?.vaultIds).not.toEqual([credentialV3.id]);
+
+    // The OUTGOING (v1-pinned) session is untouched: still resolves only to
+    // v1's credential, confirming the version snapshot the outgoing session
+    // was minted against was never itself mutated by later draft edits.
+    expect(server.getSession(conversationResult.value.currentSessionId)?.vaultIds).toEqual([credentialV1.id]);
+  });
 });
 
 describe('migrate — Stage 4: atomic swap + lineage append', () => {

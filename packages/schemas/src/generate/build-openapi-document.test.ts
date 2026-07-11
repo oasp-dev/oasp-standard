@@ -12,6 +12,7 @@ describe('buildOpenApiDocument', () => {
     const doc = buildOpenApiDocument();
     for (const name of [
       'AgentDefinition',
+      'AgentDefinitionVersion',
       'Deployment',
       'Conversation',
       'Session',

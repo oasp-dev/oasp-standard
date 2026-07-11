@@ -6,6 +6,7 @@ import { buildAuditWho } from '../audit/build-audit-who';
 import { emitAuditEvent } from '../audit/emit-audit-event';
 import type { CallerContext } from '../caller-context.types';
 import { serverErrors } from '../server-errors';
+import { getAgentDefinitionVersion } from '../store/agent-definition-version-store';
 import type { ServerState } from '../store/server-state';
 
 /**
@@ -16,6 +17,24 @@ import type { ServerState } from '../store/server-state';
  * intervening draft edit is a no-op (still emits an audit event, since
  * the required-emission set is "every invocation," not "every
  * mutating invocation").
+ *
+ * **Content-freezing (issue #10):** `publish` deliberately does NOT
+ * itself freeze `draftVersion`'s content into an `AgentDefinitionVersion`
+ * snapshot here. It only ever moves `publishedVersion` to point at a
+ * `draftVersion` whose content was already frozen the instant that
+ * version number was minted — `setup/create-agent-definition.ts` for
+ * `draftVersion: 1`, `setup/edit-agent-definition-draft.ts` for every
+ * later bump (see `store/agent-definition-version-store.ts`'s doc
+ * comment for why freezing at mint-time, rather than at publish-time,
+ * is what also keeps builder/test-session pins to an unpublished
+ * `draftVersion` version-isolated, not just published ones). What
+ * `publish` DOES do instead is assert the invariant that freezing
+ * mechanism depends on: the version it is about to publish MUST
+ * already have a recorded snapshot. If it doesn't, every future
+ * credential/tool-grant resolution against this `publishedVersion`
+ * would silently resolve nothing — a bug in the snapshot mechanism
+ * itself, not a legitimate runtime failure, hence the thrown invariant
+ * violation below rather than a `DomainError` result.
  *
  * The `definitionNotFound` precondition failure below also emits an
  * `AuditEvent` — `outcome: 'not_found'`, `refs.definitionId` naming the
@@ -36,6 +55,10 @@ export async function publishInteraction(
   if (!definition) {
     emitAuditEvent(state, clock, { who: buildAuditWho(caller), what: 'publish', outcome: 'not_found', refs: { definitionId } });
     return err(serverErrors.definitionNotFound(definitionId));
+  }
+
+  if (!getAgentDefinitionVersion(state, { agentDefinitionId: definitionId, version: definition.draftVersion })) {
+    throw new Error(`Invariant violated: AgentDefinition "${definitionId}" draftVersion ${definition.draftVersion} has no recorded content snapshot.`);
   }
 
   const updated: AgentDefinition =

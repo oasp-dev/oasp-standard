@@ -4,6 +4,7 @@ import { err, ok, type Result } from '../../shared/result';
 import type { DomainError } from '../../shared/domain-error.types';
 import { resolveVaultIds } from '../credential/resolve-vault-ids';
 import { serverErrors } from '../server-errors';
+import { getAgentDefinitionVersion } from '../store/agent-definition-version-store';
 import type { ServerState } from '../store/server-state';
 import { resolveTargetVersion } from '../target-version/resolve-target-version';
 
@@ -32,7 +33,18 @@ export async function createUnboundSessionSetup(
 
   // builder/test-session always resolve to a version (never `null` — see resolve-target-version.ts).
   const target = resolveTargetVersion(context, definition)!;
-  const vaultIds = resolveVaultIds(definition, state.credentials);
+
+  // Resolves against the target version's immutable content snapshot (issue
+  // #10), not the live `AgentDefinition` — every `draftVersion` number is
+  // frozen the instant it is minted (`createAgentDefinitionSetup` /
+  // `editAgentDefinitionDraftSetup`), so this should never be missing; an
+  // invariant violation, not a legitimate failure outcome, if it somehow is.
+  const versionSnapshot = getAgentDefinitionVersion(state, target);
+  if (!versionSnapshot) {
+    throw new Error(`Invariant violated: AgentDefinition "${definition.id}" version ${target.version} has no recorded content snapshot.`);
+  }
+
+  const vaultIds = resolveVaultIds(versionSnapshot, state.credentials);
 
   const sessionResult = await provider.createSession({
     agentDefinitionId: definition.id,

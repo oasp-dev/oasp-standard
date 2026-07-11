@@ -1,0 +1,29 @@
+{
+  "agentDefinitionId": "agentdef_01hz3x9k2v",
+  "version": 6,
+  "instructions": "You are the LucidBrain workspace assistant. Help members capture, organize, and complete items in their workspace. Always confirm destructive actions before taking them.",
+  "provider": "anthropic",
+  "model": "claude-opus-4-6",
+  "tools": [
+    { "type": "builtin_toolset", "toolset": "search" },
+    {
+      "type": "custom",
+      "name": "capture_item",
+      "description": "Captures a new item into the member's workspace inbox.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "title": { "type": "string" } },
+        "required": ["title"]
+      }
+    },
+    {
+      "type": "mcp",
+      "serverUrl": "https://mcp.lucidbrain.app/workspace",
+      "label": "LucidBrain Workspace MCP",
+      "auth": "credential",
+      "permissionPolicy": "always_allow",
+      "toolAllowlist": ["list_items", "complete_item"]
+    }
+  ],
+  "guardrails": ["no-destructive-action-without-confirmation"]
+}

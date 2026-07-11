@@ -1,4 +1,4 @@
-import type { AgentDefinition, AuditEvent, Conversation, Credential, Event, Session } from '@oasp/schemas';
+import type { AgentDefinition, AgentDefinitionContent, AgentDefinitionVersion, AgentVersionRef, AuditEvent, Conversation, Credential, Event, Session } from '@oasp/schemas';
 import type { ListSessionEventsOptions, ListSessionEventsResult } from '../adapter/list-session-events.types';
 import type { ConformanceSelfReport } from '../conformance/self-report.types';
 import type { DomainError } from '../shared/domain-error.types';
@@ -33,16 +33,20 @@ import type { RegisterCredentialInput } from './setup/register-credential-input.
  *    Conversation — the emission point for that Conversation's initial
  *    credential attachment (`docs/spec/audit.md` § Credential
  *    attachment is audited).
- * 3. **Observability accessors** (`getAgentDefinition`, `getConversation`,
- *    `getSession`, `listAuditEvents`, `listSessionEvents`) — plain
- *    reads, none of them audited. `listSessionEvents` in particular is
- *    the portable full-history read `docs/spec/interactions.md` §
- *    `stream` names as the normative derive-on-read fallback/audit
- *    source — distinct from `stream()`, which reproduces SSE semantics
- *    and terminates at the first `status: 'idle'` Event. Conformance
- *    checks that need a Session's TRUE stored history (e.g. proving
- *    `migrate` is non-compounding across repeated calls) MUST use
+ * 3. **Observability accessors** (`getAgentDefinition`,
+ *    `getAgentDefinitionVersion`, `getConversation`, `getSession`,
+ *    `listAuditEvents`, `listSessionEvents`) — plain reads, none of
+ *    them audited. `listSessionEvents` in particular is the portable
+ *    full-history read `docs/spec/interactions.md` § `stream` names as
+ *    the normative derive-on-read fallback/audit source — distinct from
+ *    `stream()`, which reproduces SSE semantics and terminates at the
+ *    first `status: 'idle'` Event. Conformance checks that need a
+ *    Session's TRUE stored history (e.g. proving `migrate` is
+ *    non-compounding across repeated calls) MUST use
  *    `listSessionEvents`, never `stream()`, for that measurement.
+ *    `getAgentDefinitionVersion` (issue #10) makes a pinned version's
+ *    immutable content snapshot directly observable, independent of the
+ *    live `AgentDefinition` `getAgentDefinition` reads.
  *
  * Every method that resolves a `Result` uses the house error pattern:
  * a `DomainError` on the failure branch, never a thrown exception for
@@ -53,8 +57,20 @@ export interface ReferenceServer {
   registerCredential(input: RegisterCredentialInput): Credential;
   createBuilderSession(agentDefinitionId: string, resources?: Session['resources']): Promise<Result<Session, DomainError>>;
   createTestSession(agentDefinitionId: string, resources?: Session['resources']): Promise<Result<Session, DomainError>>;
-  /** Simulates a draft edit (advances `draftVersion` by one). Not one of the seven audited interactions — see `setup/edit-agent-definition-draft.ts`. */
-  editAgentDefinitionDraft(definitionId: string): Promise<Result<AgentDefinition, DomainError>>;
+  /**
+   * Simulates a draft edit (advances `draftVersion` by one and freezes
+   * the resulting version's content as an immutable
+   * `AgentDefinitionVersion` snapshot — issue #10). Not one of the
+   * seven audited interactions — see `setup/edit-agent-definition-draft.ts`.
+   * `contentOverrides` optionally changes `instructions`/`provider`/
+   * `model`/`tools`/`guardrails` on the new draft version; omitted (the
+   * default), the new version has identical content to the one it
+   * advances from, same as this method's pre-#10 behaviour.
+   */
+  editAgentDefinitionDraft(
+    definitionId: string,
+    contentOverrides?: Partial<AgentDefinitionContent>,
+  ): Promise<Result<AgentDefinition, DomainError>>;
 
   publish(definitionId: string, caller: CallerContext): Promise<Result<AgentDefinition, DomainError>>;
   /** `docs/spec/interactions.md` § `createConversation`. Mints the first Session for a brand-new Conversation; the emitted AuditEvent's `who.principal` comes from `input.initiatingPrincipal` (see `setup/create-conversation.ts`), not a separate `CallerContext` — there is no `onBehalfOf` support on this interaction. */
@@ -66,6 +82,8 @@ export interface ReferenceServer {
   sendToolResult(sessionId: string, toolUseId: string, result: unknown, caller: CallerContext): Promise<Result<void, DomainError>>;
 
   getAgentDefinition(id: string): AgentDefinition | undefined;
+  /** Reads the immutable content snapshot `ref` pins (issue #10) — `undefined` only if `ref` names a version number that was never minted through this server. */
+  getAgentDefinitionVersion(ref: AgentVersionRef): AgentDefinitionVersion | undefined;
   getConversation(id: string): Conversation | undefined;
   getSession(id: string): Session | undefined;
   listAuditEvents(): readonly AuditEvent[];

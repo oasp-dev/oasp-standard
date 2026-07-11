@@ -8,6 +8,7 @@ import { emitAuditEvent } from '../audit/emit-audit-event';
 import { resolveScopeForSession } from '../audit/resolve-scope-for-session';
 import type { CallerContext } from '../caller-context.types';
 import { serverErrors } from '../server-errors';
+import { getAgentDefinitionVersion } from '../store/agent-definition-version-store';
 import type { ServerState } from '../store/server-state';
 import type { ToolExecutor } from '../tool-executor.types';
 import type { DrainOutcome } from './drain.types';
@@ -17,11 +18,15 @@ import { runDrainToIdle } from './run-drain-to-idle';
  * `drain` — `docs/spec/interactions.md` § `drain`. The client-facing,
  * audited entry point; the normative recovery logic itself lives in
  * `run-drain-to-idle.ts` so `migrate`'s internal Stage 3 can reuse it.
- * Resolves the Session's pinned `AgentDefinition` version via
- * `ServerState` so `runDrainToIdle` can authorize each pending tool
- * call against its granted tools before dispatch (issue #9) — the
- * pinned-version reachability this interaction already had (it holds
- * the `Session`) is exactly what closes that gap.
+ * Resolves the Session's pinned `AgentDefinitionVersion` snapshot (not
+ * the live `AgentDefinition` — issue #10) so `runDrainToIdle` can
+ * authorize each pending tool call against ITS OWN granted tools before
+ * dispatch (issue #9), even if the live `AgentDefinition` has since
+ * been edited (a later, still-unpublished draft edit) or a later
+ * version published — the pinned-version reachability this interaction
+ * already had (it holds the `Session`) is exactly what closes both
+ * gaps: #9's pre-dispatch authorization, and #10's version isolation
+ * from later edits.
  *
  * The `sessionNotFound` precondition failure below also emits an
  * `AuditEvent` — `outcome: 'not_found'`, `refs.sessionId` naming the
@@ -49,12 +54,14 @@ export async function drainInteraction(
     return err(serverErrors.sessionNotFound(sessionId));
   }
 
-  const definition = state.agentDefinitions.get(session.pinnedAgentVersion.agentDefinitionId);
-  if (!definition) {
-    throw new Error(`Invariant violated: session "${sessionId}" is pinned to an unknown AgentDefinition.`);
+  const definitionVersion = getAgentDefinitionVersion(state, session.pinnedAgentVersion);
+  if (!definitionVersion) {
+    throw new Error(
+      `Invariant violated: session "${sessionId}" is pinned to AgentDefinition version ${session.pinnedAgentVersion.version} of "${session.pinnedAgentVersion.agentDefinitionId}", which has no recorded content snapshot.`,
+    );
   }
 
-  const outcome = await runDrainToIdle(provider, toolExecutor, definition, sessionId);
+  const outcome = await runDrainToIdle(provider, toolExecutor, definitionVersion, sessionId);
 
   emitAuditEvent(state, clock, {
     who: buildAuditWho(caller),

@@ -19,7 +19,7 @@ components:
           type: string
           description: The agent's system prompt / instructions, verbatim.
         provider:
-          description: The provider this Definition targets when deployed.
+          description: The provider this agent targets when deployed.
           $ref: "#/components/schemas/Provider"
         model:
           type: string
@@ -206,6 +206,158 @@ components:
       additionalProperties: false
       description: "A generalized-ownership attachment point: a taxonomy level plus
         the identifier at that level."
+    AgentDefinitionVersion:
+      type: object
+      properties:
+        agentDefinitionId:
+          type: string
+          minLength: 1
+          description: Identifier of the pinned AgentDefinition.
+        version:
+          type: integer
+          exclusiveMinimum: 0
+          maximum: 9007199254740991
+          description: The version number being pinned; keyed together with
+            agentDefinitionId into an immutable AgentDefinitionVersion content
+            snapshot.
+        instructions:
+          type: string
+          description: The agent's system prompt / instructions, verbatim.
+        provider:
+          description: The provider this agent targets when deployed.
+          $ref: "#/components/schemas/Provider"
+        model:
+          type: string
+          minLength: 1
+          description: The provider's model identifier (e.g. a Claude model name).
+        tools:
+          type: array
+          items:
+            oneOf:
+              - type: object
+                properties:
+                  type:
+                    type: string
+                    const: builtin_toolset
+                    description: Discriminant identifying this as a builtin toolset grant.
+                  toolset:
+                    type: string
+                    enum:
+                      - coding
+                      - search
+                      - files
+                    description: Which provider-hosted builtin toolset is granted to the agent.
+                required:
+                  - type
+                  - toolset
+                additionalProperties: false
+                description: Grants one of the provider-hosted builtin toolsets (coding, search,
+                  files).
+              - type: object
+                properties:
+                  type:
+                    type: string
+                    const: custom
+                    description: Discriminant identifying this as a custom tool definition.
+                  name:
+                    type: string
+                    minLength: 1
+                    description: Unique name of the custom tool, as the model will call it.
+                  description:
+                    type: string
+                    minLength: 1
+                    description: Description of the custom tool shown to the model to guide when and
+                      how it is invoked.
+                  inputSchema:
+                    type: object
+                    propertyNames:
+                      type: string
+                    additionalProperties: {}
+                    description: JSON Schema (as a plain object) describing the custom tool's input
+                      shape.
+                required:
+                  - type
+                  - name
+                  - description
+                  - inputSchema
+                additionalProperties: false
+                description: Defines a custom, non-MCP tool the agent may call.
+              - type: object
+                properties:
+                  type:
+                    type: string
+                    const: mcp
+                    description: Discriminant identifying this as an MCP server grant.
+                  serverUrl:
+                    type: string
+                    format: uri
+                    description: URL of the MCP server exposing the tool(s).
+                  label:
+                    type: string
+                    minLength: 1
+                    description: Human-readable label for this MCP server in tool pickers and logs.
+                  auth:
+                    type: string
+                    enum:
+                      - none
+                      - credential
+                    description: Whether this MCP server requires no authentication, or is matched
+                      to a Credential by serverUrl at session creation.
+                  permissionPolicy:
+                    type: string
+                    enum:
+                      - always_allow
+                      - always_ask
+                    description: "Declared tool-call policy for this server: `always_allow` —
+                      execute once the call is otherwise authorized against the
+                      grants of the pinned AgentDefinition version; `always_ask`
+                      — additionally require a per-call approval before
+                      execution. This field states policy intent a conformant
+                      server MUST honour; the approval mechanism `always_ask`
+                      requires is defined by a separate authorization
+                      sub-protocol, not by this field, and a server MUST NOT
+                      treat `always_ask` as satisfied merely by executing the
+                      call."
+                  toolAllowlist:
+                    description: "Declared restriction a conformant server MUST enforce before
+                      dispatch: if present, only these tool names are usable on
+                      this server — a server MUST reject any other name
+                      pre-dispatch; if absent, every tool the server exposes is
+                      usable."
+                    type: array
+                    items:
+                      type: string
+                      minLength: 1
+                required:
+                  - type
+                  - serverUrl
+                  - label
+                  - auth
+                  - permissionPolicy
+                additionalProperties: false
+                description: Grants access to tools exposed by a remote MCP server, matched to a
+                  Credential by serverUrl at session creation.
+          description: "The tools available to the agent: builtin toolsets, custom tools,
+            or MCP server grants."
+        guardrails:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          description: Opaque v0 guardrail identifiers/policy names applied to the agent.
+            Structure beyond a name is left to profiles until two
+            implementations interoperate on guardrail internals.
+      required:
+        - agentDefinitionId
+        - version
+        - instructions
+        - provider
+        - model
+        - tools
+        - guardrails
+      additionalProperties: false
+      description: An immutable, per-version content snapshot of an AgentDefinition,
+        keyed by { agentDefinitionId, version }.
     Deployment:
       type: object
       properties:
@@ -326,13 +478,15 @@ components:
           type: integer
           exclusiveMinimum: 0
           maximum: 9007199254740991
-          description: The specific, immutable version number of the AgentDefinition being
-            pinned.
+          description: The version number being pinned; keyed together with
+            agentDefinitionId into an immutable AgentDefinitionVersion content
+            snapshot.
       required:
         - agentDefinitionId
         - version
       additionalProperties: false
-      description: A pin to one immutable version of an AgentDefinition.
+      description: A pin to one version of an AgentDefinition, keyed into an immutable
+        AgentDefinitionVersion content snapshot.
     Session:
       type: object
       properties:

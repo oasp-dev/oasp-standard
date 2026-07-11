@@ -11,6 +11,7 @@ import { publishInteraction } from './interactions/publish';
 import { sendInteraction } from './interactions/send';
 import { sendToolResultInteraction } from './interactions/send-tool-result';
 import { streamInteraction } from './interactions/stream';
+import { getAgentDefinitionVersion } from './store/agent-definition-version-store';
 import { createServerState } from './store/server-state';
 import type { CreateReferenceServerOptions } from './create-reference-server-options.types';
 import type { ReferenceServer } from './reference-server.types';
@@ -44,7 +45,8 @@ export function createReferenceServer(options: CreateReferenceServerOptions): Re
       createUnboundSessionSetup(state, provider, agentDefinitionId, 'builder', resources),
     createTestSession: (agentDefinitionId, resources) =>
       createUnboundSessionSetup(state, provider, agentDefinitionId, 'test-session', resources),
-    editAgentDefinitionDraft: (definitionId) => editAgentDefinitionDraftSetup(state, provider, environmentId, definitionId),
+    editAgentDefinitionDraft: (definitionId, contentOverrides) =>
+      editAgentDefinitionDraftSetup(state, provider, environmentId, definitionId, contentOverrides),
 
     publish: (definitionId, caller) => publishInteraction(state, clock, definitionId, caller),
     createConversation: (input) => createConversationSetup(state, provider, clock, input),
@@ -56,6 +58,7 @@ export function createReferenceServer(options: CreateReferenceServerOptions): Re
       sendToolResultInteraction(state, provider, clock, sessionId, toolUseId, result, caller),
 
     getAgentDefinition: (id) => state.agentDefinitions.get(id),
+    getAgentDefinitionVersion: (ref) => getAgentDefinitionVersion(state, ref),
     getConversation: (id) => state.conversations.get(id),
     getSession: (id) => state.sessions.get(id),
     listAuditEvents: () => [...state.auditLog],

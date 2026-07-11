@@ -7,6 +7,7 @@ import { buildAuditEvidence } from '../audit/build-audit-evidence';
 import { emitAuditEvent } from '../audit/emit-audit-event';
 import { resolveVaultIds } from '../credential/resolve-vault-ids';
 import { serverErrors } from '../server-errors';
+import { getAgentDefinitionVersion } from '../store/agent-definition-version-store';
 import type { ServerState } from '../store/server-state';
 import type { CreateConversationInput } from './create-conversation-input.types';
 
@@ -112,7 +113,17 @@ export async function createConversationSetup(
   }
   const pinnedAgentVersion: AgentVersionRef = { agentDefinitionId: definition.id, version: definition.publishedVersion };
 
-  const vaultIds = resolveVaultIds(definition, state.credentials);
+  // Resolves against the pinned version's immutable content snapshot (issue
+  // #10), not the live `AgentDefinition` — `publishedVersion` was frozen the
+  // instant it was minted (`createAgentDefinitionSetup` / `editAgentDefinitionDraftSetup`),
+  // so this should never be missing; an invariant violation, not a
+  // legitimate failure outcome, if it somehow is.
+  const versionSnapshot = getAgentDefinitionVersion(state, pinnedAgentVersion);
+  if (!versionSnapshot) {
+    throw new Error(`Invariant violated: AgentDefinition "${definition.id}" version ${pinnedAgentVersion.version} has no recorded content snapshot.`);
+  }
+
+  const vaultIds = resolveVaultIds(versionSnapshot, state.credentials);
   const resources = input.resources ?? [];
 
   const sessionResult = await provider.createSession({

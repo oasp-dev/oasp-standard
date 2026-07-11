@@ -24,6 +24,29 @@ any (session context, `AgentDefinition`) pair:
    successful no-op, never an error and never a partial attempt (see
    [`interactions.md` § Preconditions](./interactions.md#preconditions)).
 
+## Resolving to content, not only a pointer
+
+Outcome 1 above resolves to an `AgentVersionRef` — a bare, comparable
+`{ agentDefinitionId, version }` pointer. That pointer alone answers
+*which* version to migrate toward; it does not answer *what that
+version's content is*, because `AgentDefinition` stores only its
+CURRENT, still-mutable `instructions`/`provider`/`model`/`tools`/`guardrails`,
+not a history of every version's content
+(issue [#10](https://github.com/FieldstateNZ/oasp-standard/issues/10)).
+A conformant server **MUST** therefore back every `AgentVersionRef`
+this table can ever produce with an immutable content snapshot — see
+[`AgentDefinitionVersion`](../../packages/schemas/src/resources/agent-definition-version.ts) —
+recorded under that exact `{ agentDefinitionId, version }` key at the
+moment the version number is minted, whether or not it is ever
+published. `migrate`'s Stage 1 `vaultIds` re-resolution and `drain`'s
+pre-dispatch tool-call authorization (issue #9) both resolve against
+THAT snapshot, not against whatever the live `AgentDefinition` happens
+to hold at the moment they run — otherwise a target version this table
+resolves to today could silently pick up a DIFFERENT version's content
+by the time a later draft edit changes the live Definition, defeating
+the whole point of resolving to a specific, comparable version in the
+first place.
+
 Resolution **MUST NOT** produce a target version that does not exist.
 In particular, resolving a real conversation whose `AgentDefinition`
 has a `null` `publishedVersion` **MUST** fall through to "leave in

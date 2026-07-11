@@ -204,7 +204,7 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991,
-          "description": "The specific, immutable version number of the AgentDefinition being pinned."
+          "description": "The version number being pinned; keyed together with agentDefinitionId into an immutable AgentDefinitionVersion content snapshot."
         }
       },
       "required": [
@@ -212,7 +212,7 @@
         "version"
       ],
       "additionalProperties": false,
-      "description": "A pin to one immutable version of an AgentDefinition."
+      "description": "A pin to one version of an AgentDefinition, keyed into an immutable AgentDefinitionVersion content snapshot."
     }
   }
 }

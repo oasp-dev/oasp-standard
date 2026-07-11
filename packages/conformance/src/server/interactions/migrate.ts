@@ -10,6 +10,7 @@ import type { CallerContext } from '../caller-context.types';
 import { withConversationLock } from '../conversation-lock';
 import { resolveVaultIds } from '../credential/resolve-vault-ids';
 import { serverErrors } from '../server-errors';
+import { getAgentDefinitionVersion } from '../store/agent-definition-version-store';
 import type { ServerState } from '../store/server-state';
 import { resolveTargetVersion } from '../target-version/resolve-target-version';
 import type { ToolExecutor } from '../tool-executor.types';
@@ -20,17 +21,20 @@ import { runDrainToIdle } from './run-drain-to-idle';
  * The crown-jewel interaction: mint a session at the target version,
  * seed its transcript, drain it to idle, then atomically swap it in.
  *
- * **Interpretation, flagged for the dev lead's sign-off (vaultIds
- * re-resolution source):** Stage 1 re-resolves `vaultIds` against "the
- * target version's `mcp` tool grants." The S0 schemas do not snapshot
- * an `AgentDefinition`'s tool grants per historical version — only the
- * *current* `tools` array exists. This implementation re-resolves
- * against the current `AgentDefinition.tools`, which is correct for
- * any migrate where the target version *is* the current draft/published
- * content (the common case this conformance kit exercises) but would
- * need a real version-content store in a production server that lets
- * `AgentDefinition` content itself be edited after a version is
- * published.
+ * **Resolved (was flagged for the dev lead's sign-off; closed by issue
+ * #10): vaultIds re-resolution source.** Stage 1 re-resolves `vaultIds`
+ * against "the target version's `mcp` tool grants." Before issue #10,
+ * the S0 schemas snapshotted no `AgentDefinition`'s tool grants per
+ * historical version — only the *current* `tools` array existed — so
+ * this re-resolved against the current `AgentDefinition.tools`, which
+ * only happened to be correct when the target version *was* the
+ * current draft/published content, and would silently resolve the
+ * WRONG grants for any migrate where a later draft edit had since
+ * changed `tools`. This now re-resolves against `target`'s immutable
+ * `AgentDefinitionVersion` snapshot (`versionSnapshot` below,
+ * `store/agent-definition-version-store.ts`) instead — correct
+ * regardless of what the live `AgentDefinition` has been edited to
+ * since `target` was minted.
  *
  * **Interpretation, flagged for the dev lead's sign-off (internal
  * drain is not separately audited):** Stage 3 runs `drain`'s normative
@@ -122,11 +126,24 @@ export async function migrateInteraction(
       return err(serverErrors.notDeployed(definition.id));
     }
 
+    // The target version's immutable content snapshot (issue #10) — every
+    // version number `resolveTargetVersion` can ever produce was already
+    // frozen the instant it was minted (`createAgentDefinitionSetup` /
+    // `editAgentDefinitionDraftSetup`), so this should never be missing;
+    // treated as an invariant violation, not a legitimate failure outcome,
+    // if it somehow is.
+    const versionSnapshot = getAgentDefinitionVersion(state, target);
+    if (!versionSnapshot) {
+      throw new Error(`Invariant violated: AgentDefinition "${definition.id}" version ${target.version} has no recorded content snapshot.`);
+    }
+
     // Stage 1 — mint session at target version. Resources re-attached fresh
     // (new array + new object per entry, never aliased); vaultIds re-resolved
-    // against the target version's tool grants, never copied from outgoing.
+    // against the target version's immutable content snapshot, never copied
+    // from outgoing and never read off the live, still-editable
+    // `AgentDefinition` (issue #10).
     const resources = outgoingSession.resources.map((resource) => ({ ...resource }));
-    const vaultIds = resolveVaultIds(definition, state.credentials);
+    const vaultIds = resolveVaultIds(versionSnapshot, state.credentials);
 
     // Stage 2 — transcript-seed. Degrade to an empty seed on fetch failure;
     // migrate MUST NOT fail because of it. The seed is always the literal,
@@ -176,11 +193,13 @@ export async function migrateInteraction(
     // `runDrainToIdle` fails for ANY non-idle terminal status (not just `'error'`), so
     // a still-`'running'` newly minted session — e.g. a chained tool call re-parking it
     // right after its enumerated pending calls resolve — is rejected here, before the
-    // unconditional Stage-4 swap below ever runs. `definition` (already resolved above,
-    // for Stage 1's vaultIds re-resolution) is reused here too, so a pending tool call
-    // carried onto the newly minted session is authorized against the same grants
-    // (issue #9) — the same current-`tools`-array interpretation flagged above applies.
-    const drainResult = await runDrainToIdle(provider, toolExecutor, definition, newSession.id);
+    // unconditional Stage-4 swap below ever runs. `versionSnapshot` (already resolved
+    // above, for Stage 1's vaultIds re-resolution) is reused here too, so a pending tool
+    // call carried onto the newly minted session is authorized against the SAME target
+    // version's grants (issue #9) — from its immutable snapshot, not the live
+    // `AgentDefinition` (issue #10), so a draft edit racing this migrate can't change
+    // what the newly minted session is authorized against mid-flight.
+    const drainResult = await runDrainToIdle(provider, toolExecutor, versionSnapshot, newSession.id);
     if (!drainResult.ok) {
       // The new Session — and its vaultIds — genuinely exist at this point
       // (createSession above already succeeded); only drain failed
