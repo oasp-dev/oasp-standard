@@ -90,6 +90,17 @@ describe('drain', () => {
     expect(result.error.code).toBe('Server.SessionNotFound');
   });
 
+  // Issue #11 Tranche A: a not-found probe MUST NOT vanish from the trail.
+  it('emits a not_found AuditEvent (not silence) naming the caller-asserted sessionId, with no fabricated scope', async () => {
+    const { server } = testHarnessFactory();
+    await server.drain('does_not_exist', callerContextFactory());
+
+    const events = server.listAuditEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ what: 'drain', outcome: 'not_found', refs: { sessionId: 'does_not_exist' } });
+    expect(events[0] && 'scope' in events[0]).toBe(false);
+  });
+
   it('emits exactly one AuditEvent{ what: "drain" } scoped via the pinned AgentDefinition for an unbound (builder) session', async () => {
     const { server, sessionId } = await buildParkedSession();
     await server.drain(sessionId, callerContextFactory());
@@ -116,7 +127,7 @@ describe('drain — pinned-grant authorization (issue #9)', () => {
     return { server, controls, provider, executedToolCalls };
   }
 
-  it('rejects a pending call for a tool not present in the pinned AgentDefinition, pre-dispatch — the executor is never invoked', async () => {
+  it('rejects a pending call for a tool not present in the pinned AgentDefinition, pre-dispatch — the executor is never invoked, and the rejection is still audited', async () => {
     const { server, controls, executedToolCalls } = buildHarnessWithSpyExecutor();
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory({ tools: [] }));
     controls.queuePendingToolCallForNextSession({ toolUseId: 'tooluse_unlisted', name: 'delete_everything', input: {} });
@@ -128,6 +139,14 @@ describe('drain — pinned-grant authorization (issue #9)', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('Server.UnauthorizedToolCall');
     expect(executedToolCalls).toEqual([]);
+
+    // Issue #9's pre-dispatch authorization rejection is not a new,
+    // separately-unaudited failure path: `drainInteraction`'s unconditional
+    // `outcome.ok ? 'success' : 'failure'` emission already covers it —
+    // verified here, not re-fixed (see `drain.ts`'s class doc comment).
+    const drainEvents = server.listAuditEvents().filter((e) => e.what === 'drain');
+    expect(drainEvents).toHaveLength(1);
+    expect(drainEvents[0]?.outcome).toBe('failure');
   });
 
   it('rejects an MCP-routed pending call whose reported serverUrl does not match any granted server, pre-dispatch — the executor is never invoked', async () => {

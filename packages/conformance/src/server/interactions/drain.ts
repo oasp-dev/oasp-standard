@@ -2,6 +2,7 @@ import type { AgentProvider } from '../../adapter/agent-provider.types';
 import type { Clock } from '../../shared/clock.types';
 import type { DomainError } from '../../shared/domain-error.types';
 import { err, type Result } from '../../shared/result';
+import { buildAuditEvidence } from '../audit/build-audit-evidence';
 import { buildAuditWho } from '../audit/build-audit-who';
 import { emitAuditEvent } from '../audit/emit-audit-event';
 import { resolveScopeForSession } from '../audit/resolve-scope-for-session';
@@ -21,6 +22,18 @@ import { runDrainToIdle } from './run-drain-to-idle';
  * call against its granted tools before dispatch (issue #9) — the
  * pinned-version reachability this interaction already had (it holds
  * the `Session`) is exactly what closes that gap.
+ *
+ * The `sessionNotFound` precondition failure below also emits an
+ * `AuditEvent` — `outcome: 'not_found'`, `refs.sessionId` naming the
+ * caller-asserted (nonexistent) target, `scope` omitted — rather than
+ * returning silently, per `docs/spec/audit.md` § Not-found
+ * preconditions (issue #11). This closes the same gap for `drain` that
+ * issue #9's pre-dispatch tool-call authorization check does NOT need
+ * separate handling here for: an unauthorized carried tool call is
+ * surfaced by `runDrainToIdle` as an ordinary drain failure, already
+ * covered by the unconditional `outcome.ok ? 'success' : 'failure'`
+ * emission below (this was already correct before this slice; verified,
+ * not re-fixed).
  */
 export async function drainInteraction(
   state: ServerState,
@@ -31,7 +44,10 @@ export async function drainInteraction(
   caller: CallerContext,
 ): Promise<Result<DrainOutcome, DomainError>> {
   const session = state.sessions.get(sessionId);
-  if (!session) return err(serverErrors.sessionNotFound(sessionId));
+  if (!session) {
+    emitAuditEvent(state, clock, { who: buildAuditWho(caller), what: 'drain', outcome: 'not_found', refs: { sessionId } });
+    return err(serverErrors.sessionNotFound(sessionId));
+  }
 
   const definition = state.agentDefinitions.get(session.pinnedAgentVersion.agentDefinitionId);
   if (!definition) {
@@ -46,6 +62,7 @@ export async function drainInteraction(
     scope: resolveScopeForSession(state, session),
     outcome: outcome.ok ? 'success' : 'failure',
     refs: { sessionId },
+    evidence: buildAuditEvidence({ agentVersionRef: session.pinnedAgentVersion }),
   });
 
   return outcome;

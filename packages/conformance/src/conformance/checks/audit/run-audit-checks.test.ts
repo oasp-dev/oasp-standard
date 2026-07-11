@@ -11,8 +11,10 @@ describe('runAuditChecks', () => {
     const failures = results.filter((r) => !r.passed);
     expect(failures, JSON.stringify(failures)).toEqual([]);
     // one check per required what-value (7), plus shape/scope/provenance/
-    // credentialIds (createConversation + migrate)/session-bound checks.
-    expect(results.length).toBeGreaterThanOrEqual(14);
+    // credentialIds (createConversation + migrate)/session-bound checks,
+    // plus contentDigest/agentVersionRef evidence checks and one not-found
+    // check per required what-value (9 more, issue #11 Tranche A).
+    expect(results.length).toBeGreaterThanOrEqual(23);
   });
 
   it('catches a server that fails to emit a required AuditEvent', async () => {
@@ -130,5 +132,83 @@ describe('runAuditChecks', () => {
     const credentialCheck = results.find((r) => r.name.includes('migrate names the re-attached Credential'));
     expect(migrateCheck?.passed).toBe(true);
     expect(credentialCheck?.passed).toBe(false);
+  });
+
+  // Issue #11 Tranche A: the original defect this slice fixes — a not-found
+  // precondition failure returning before `emitAuditEvent` ever ran, leaving
+  // a failed enumeration probe with zero trace. Simulates that pre-fix
+  // behaviour by hiding every `not_found` AuditEvent from the observer, the
+  // same technique the other "catches a server that fails to emit" tests
+  // above use.
+  it('catches a server that returns silently on a not-found precondition, emitting no AuditEvent at all (the original issue #11 defect)', async () => {
+    const { server: realServer } = testHarnessFactory();
+    const brokenServer: typeof realServer = {
+      ...realServer,
+      listAuditEvents: () => realServer.listAuditEvents().filter((e) => e.outcome !== 'not_found'),
+    };
+
+    const results = await runAuditChecks(brokenServer);
+    const notFoundFailures = results.filter((r) => r.name.includes("outcome: 'not_found'") && !r.passed);
+    // All seven not-found checks must fail — every one of them silently
+    // returns nothing to observe under this simulated defect.
+    expect(notFoundFailures).toHaveLength(7);
+  });
+
+  // A weaker, partial fix — emitting an AuditEvent on a not-found precondition
+  // but stamping it outcome: 'failure' like any other operational failure —
+  // still leaves a probe indistinguishable from an ordinary error in the
+  // trail. The dedicated not_found value exists precisely so this is caught.
+  it("catches a server whose not-found AuditEvents use outcome: 'failure' instead of the distinguishable 'not_found' value", async () => {
+    const { server: realServer } = testHarnessFactory();
+    const brokenServer: typeof realServer = {
+      ...realServer,
+      listAuditEvents: () => realServer.listAuditEvents().map((e) => (e.outcome === 'not_found' ? { ...e, outcome: 'failure' as const } : e)),
+    };
+
+    const results = await runAuditChecks(brokenServer);
+    const notFoundFailures = results.filter((r) => r.name.includes("outcome: 'not_found'") && !r.passed);
+    expect(notFoundFailures).toHaveLength(7);
+  });
+
+  // Issue #11 Tranche A teeth: a server that never populates
+  // evidence.contentDigest on `send` leaves "exactly what content was sent"
+  // unanswerable from the trail alone — the exact gap this field closes.
+  it('catches a server whose send AuditEvent omits evidence.contentDigest', async () => {
+    const { server: realServer } = testHarnessFactory();
+    const brokenServer: typeof realServer = {
+      ...realServer,
+      listAuditEvents: () =>
+        realServer.listAuditEvents().map((event) => {
+          if (event.what !== 'send' || !event.evidence) return event;
+          const { contentDigest: _contentDigest, ...evidenceWithoutContentDigest } = event.evidence;
+          return { ...event, evidence: evidenceWithoutContentDigest };
+        }),
+    };
+
+    const results = await runAuditChecks(brokenServer);
+    const contentDigestCheck = results.find((r) => r.name.includes('evidence.contentDigest'));
+    expect(contentDigestCheck?.passed).toBe(false);
+  });
+
+  // Issue #11 Tranche A teeth: a server that never populates
+  // evidence.agentVersionRef leaves "under which AgentDefinition version"
+  // unanswerable straight from the AuditEvent, forcing a reader back to
+  // Session/Conversation state the trail is supposed to be sufficient
+  // without.
+  it('catches a server whose session/conversation-scoped AuditEvents omit evidence.agentVersionRef', async () => {
+    const { server: realServer } = testHarnessFactory();
+    const brokenServer: typeof realServer = {
+      ...realServer,
+      listAuditEvents: () =>
+        realServer.listAuditEvents().map((event) => {
+          if (!event.evidence?.agentVersionRef) return event;
+          const { agentVersionRef: _agentVersionRef, ...evidenceWithoutAgentVersionRef } = event.evidence;
+          return { ...event, evidence: evidenceWithoutAgentVersionRef };
+        }),
+    };
+
+    const results = await runAuditChecks(brokenServer);
+    const agentVersionRefCheck = results.find((r) => r.name.includes('evidence.agentVersionRef'));
+    expect(agentVersionRefCheck?.passed).toBe(false);
   });
 });

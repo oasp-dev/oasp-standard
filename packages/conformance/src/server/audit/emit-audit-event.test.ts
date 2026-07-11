@@ -37,4 +37,66 @@ describe('emitAuditEvent', () => {
     const second = emitAuditEvent(state, clock, input);
     expect(first.id).not.toBe(second.id);
   });
+
+  // Issue #11 Tranche A: a not-found precondition has no primary resource to
+  // source a scope from — `scope` is omittable on that one outcome value.
+  it('accepts a not_found outcome with no scope, and omits the key entirely rather than storing scope: undefined', () => {
+    const state = createServerState();
+    const clock = createFixedClock('2026-01-01T00:00:00.000Z');
+
+    const event = emitAuditEvent(state, clock, {
+      who: { principal: { kind: 'user', id: 'user_1' } },
+      what: 'send',
+      outcome: 'not_found',
+      refs: { sessionId: 'does_not_exist' },
+    });
+
+    expect(auditEventSchema.safeParse(event).success).toBe(true);
+    expect('scope' in event).toBe(false);
+  });
+
+  it('throws when a success outcome is emitted with no scope — a malformed event reaching this choke point is a bug, not a Result-worthy expected failure', () => {
+    const state = createServerState();
+    const clock = createFixedClock('2026-01-01T00:00:00.000Z');
+
+    expect(() =>
+      emitAuditEvent(state, clock, {
+        who: { principal: { kind: 'user', id: 'user_1' } },
+        what: 'publish',
+        outcome: 'success',
+        refs: {},
+      }),
+    ).toThrow();
+  });
+
+  it('omits evidence entirely (never {}) when the caller passes none', () => {
+    const state = createServerState();
+    const clock = createFixedClock('2026-01-01T00:00:00.000Z');
+
+    const event = emitAuditEvent(state, clock, {
+      who: { principal: { kind: 'user', id: 'user_1' } },
+      what: 'publish',
+      scope: { level: 'workspace', id: 'workspace_1' },
+      outcome: 'success',
+      refs: {},
+    });
+
+    expect('evidence' in event).toBe(false);
+  });
+
+  it('carries evidence through unchanged when the caller passes it', () => {
+    const state = createServerState();
+    const clock = createFixedClock('2026-01-01T00:00:00.000Z');
+
+    const event = emitAuditEvent(state, clock, {
+      who: { principal: { kind: 'user', id: 'user_1' } },
+      what: 'send',
+      scope: { level: 'workspace', id: 'workspace_1' },
+      outcome: 'success',
+      refs: { sessionId: 'sess_1' },
+      evidence: { contentDigest: 'sha256:abc123' },
+    });
+
+    expect(event.evidence).toEqual({ contentDigest: 'sha256:abc123' });
+  });
 });

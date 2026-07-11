@@ -5,6 +5,7 @@ import { createConversationInputFactory } from '../../../factories/create-conver
 import { registerCredentialInputFactory } from '../../../factories/register-credential-input-factory';
 import { scopeFactory } from '../../../factories/scope-factory';
 import { mockSentinels } from '../../../mock/mock-sentinels';
+import { computeContentDigest } from '../../../server/audit/compute-content-digest';
 import type { CallerContext } from '../../../server/caller-context.types';
 import type { ReferenceServer } from '../../../server/reference-server.types';
 import type { Result } from '../../../shared/result';
@@ -12,6 +13,20 @@ import { failed, passed, type CheckResult } from '../../check-result.types';
 
 /** The four interactions `docs/spec/audit.md` § Scope provenance treats as "session-bound": their `scope` MUST come from the bound Conversation, or — when the Session has no bound Conversation (builder/test-session) — MUST fall back to the pinned `AgentDefinition` version's own `scope`. */
 const SESSION_BOUND_WHATS: readonly AuditEvent['what'][] = ['send', 'sendToolResult', 'drain', 'stream'];
+
+/** A bare id no scenario in this file ever mints — guaranteed to be "not found" for every one of the seven interactions' not-found scenario below (issue #11). */
+const NOT_FOUND_PROBE_ID = 'does_not_exist_audit_not_found_probe';
+
+/** Which `refs` sub-field each interaction's not-found `AuditEvent` names the caller-asserted (nonexistent) target under — see `docs/spec/audit.md` § Not-found preconditions. */
+const NOT_FOUND_REFS_FIELD: Record<AuditEvent['what'], 'definitionId' | 'conversationId' | 'sessionId'> = {
+  publish: 'definitionId',
+  createConversation: 'definitionId',
+  migrate: 'conversationId',
+  drain: 'sessionId',
+  stream: 'sessionId',
+  send: 'sessionId',
+  sendToolResult: 'sessionId',
+};
 
 /**
  * The `mcp` tool grant's `serverUrl` and the registered `Credential`'s
@@ -36,7 +51,11 @@ const CREDENTIAL_MCP_SERVER_URL = 'https://mcp.example.com/audit-scenario';
 function findScopeProvenanceMismatches(emitted: readonly AuditEvent[], sessionId: string, expectedScopeId: string): readonly string[] {
   return SESSION_BOUND_WHATS.filter((what) => {
     const event = emitted.find((candidate) => candidate.what === what && candidate.refs.sessionId === sessionId);
-    return !event || event.scope.id !== expectedScopeId;
+    // `?.` on `scope` itself (not just on `event`): a `not_found` outcome may
+    // legitimately omit `scope` entirely (issue #11) — none of the four
+    // session-bound `what` values this helper checks can reach that outcome
+    // in the scenarios that call it, but the type now reflects the schema.
+    return !event || event.scope?.id !== expectedScopeId;
   });
 }
 
@@ -62,6 +81,36 @@ async function runBuilderSessionScenario(server: ReferenceServer, definitionId: 
 }
 
 /**
+ * Drives every one of the seven interactions against {@link NOT_FOUND_PROBE_ID}
+ * — a bare id guaranteed never to resolve to a real `AgentDefinition` /
+ * `Conversation` / `Session` — and returns the AuditEvents emitted for
+ * each, keyed by `what`. Exercises `docs/spec/audit.md` § Not-found
+ * preconditions (issue #11): before this fix, a not-found precondition
+ * failure returned before `emitAuditEvent` ever ran, so a failed
+ * enumeration probe left zero trace — the defect this scenario's checks
+ * (below, in {@link runAuditChecks}) prove is closed.
+ */
+async function runNotFoundScenario(server: ReferenceServer, caller: CallerContext): Promise<ReadonlyMap<AuditEvent['what'], readonly AuditEvent[]>> {
+  const before = server.listAuditEvents().length;
+
+  await server.publish(NOT_FOUND_PROBE_ID, caller);
+  await server.createConversation(createConversationInputFactory(NOT_FOUND_PROBE_ID));
+  await server.migrate(NOT_FOUND_PROBE_ID, caller);
+  await server.drain(NOT_FOUND_PROBE_ID, caller);
+  await server.stream(NOT_FOUND_PROBE_ID, caller);
+  await server.send(NOT_FOUND_PROBE_ID, 'not-found probe content', caller);
+  await server.sendToolResult(NOT_FOUND_PROBE_ID, 'tooluse_not_found_probe', {}, caller);
+
+  const byWhat = new Map<AuditEvent['what'], AuditEvent[]>();
+  for (const event of server.listAuditEvents().slice(before)) {
+    const list = byWhat.get(event.what) ?? [];
+    list.push(event);
+    byWhat.set(event.what, list);
+  }
+  return byWhat;
+}
+
+/**
  * Drives a `ReferenceServer` through all seven required-emission
  * interactions (`docs/spec/audit.md` § Required-emission set) and
  * asserts each produces exactly one schema-valid `AuditEvent` with the
@@ -81,6 +130,17 @@ async function runBuilderSessionScenario(server: ReferenceServer, definitionId: 
  * `docs/spec/audit.md` § Credential attachment is audited
  * (`createConversation` and `migrate`), this closes what used to be a
  * documented, deliberately-unchecked v0 gap.
+ *
+ * **Issue #11 Tranche A addition:** also drives {@link runNotFoundScenario}
+ * — all seven interactions against a bare id guaranteed never to resolve —
+ * and asserts each still emits exactly one `AuditEvent` with
+ * `outcome: 'not_found'` naming the caller-asserted target, closing the
+ * "failed enumeration probes leave zero trace" gap the previous suite
+ * (happy paths only) could not have caught. Also asserts the two
+ * action-specific `evidence` fields Tranche A adds: `send`'s
+ * `evidence.contentDigest` matches the actual posted content, and every
+ * interaction that resolves a Session/Conversation carries
+ * `evidence.agentVersionRef` naming the correct pinned `AgentDefinition`.
  */
 export async function runAuditChecks(server: ReferenceServer): Promise<CheckResult[]> {
   const caller = callerContextFactory();
@@ -145,9 +205,9 @@ export async function runAuditChecks(server: ReferenceServer): Promise<CheckResu
   const migrateEvent = emitted.find((event) => event.what === 'migrate' && event.refs.conversationId === conversationResult.value.id);
 
   const provenanceName = 'audit: publish/createConversation/migrate scope matches their primary resource\'s own scope';
-  const publishScopeOk = publishEvent?.scope.id === definition.scope.id;
-  const createConversationScopeOk = createConversationEvent?.scope.id === conversationResult.value.scope.id;
-  const migrateScopeOk = migrateEvent?.scope.id === conversationResult.value.scope.id;
+  const publishScopeOk = publishEvent?.scope?.id === definition.scope.id;
+  const createConversationScopeOk = createConversationEvent?.scope?.id === conversationResult.value.scope.id;
+  const migrateScopeOk = migrateEvent?.scope?.id === conversationResult.value.scope.id;
   checks.push(
     publishScopeOk && createConversationScopeOk && migrateScopeOk
       ? passed(provenanceName)
@@ -181,6 +241,33 @@ export async function runAuditChecks(server: ReferenceServer): Promise<CheckResu
       : failed(migrateCredentialName, `expected refs.credentialIds to include '${credential.id}', got ${JSON.stringify(migrateCredentialIds)}`),
   );
 
+  // Issue #11 Tranche A teeth: send's AuditEvent MUST carry
+  // evidence.contentDigest matching the actual posted content — not merely
+  // that some digest-shaped string is present.
+  const sendEvent = emitted.find((event) => event.what === 'send' && event.refs.sessionId === conversationSessionId);
+  const contentDigestName = 'audit: send\'s AuditEvent carries evidence.contentDigest matching the posted content';
+  const expectedContentDigest = computeContentDigest(`${mockSentinels.toolUsePrefix}lookup`);
+  checks.push(
+    sendEvent?.evidence?.contentDigest === expectedContentDigest
+      ? passed(contentDigestName)
+      : failed(contentDigestName, `expected evidence.contentDigest '${expectedContentDigest}', got ${JSON.stringify(sendEvent?.evidence)}`),
+  );
+
+  // Issue #11 Tranche A teeth: every interaction that resolves a Session or
+  // Conversation MUST carry evidence.agentVersionRef naming the pinned
+  // AgentDefinition — asserts the actual id, not just "some ref is present".
+  const agentVersionRefWhats: readonly AuditEvent['what'][] = ['createConversation', 'migrate', 'send', 'sendToolResult', 'drain', 'stream'];
+  const agentVersionRefName = 'audit: createConversation/migrate/send/sendToolResult/drain/stream AuditEvents carry evidence.agentVersionRef naming the pinned AgentDefinition';
+  const wrongAgentVersionRef = agentVersionRefWhats.filter((what) => {
+    const event = emitted.find((candidate) => candidate.what === what);
+    return event?.evidence?.agentVersionRef?.agentDefinitionId !== definition.id;
+  });
+  checks.push(
+    wrongAgentVersionRef.length === 0
+      ? passed(agentVersionRefName)
+      : failed(agentVersionRefName, `missing or wrong evidence.agentVersionRef for: ${wrongAgentVersionRef.join(', ')}`),
+  );
+
   // B3 teeth: the four session-bound interactions' scope MUST equal the
   // bound Conversation's scope — not merely "present & non-empty".
   const conversationBoundName = 'audit: send/sendToolResult/drain/stream on a Conversation-bound session carry that Conversation\'s scope';
@@ -204,6 +291,26 @@ export async function runAuditChecks(server: ReferenceServer): Promise<CheckResu
       fallbackMismatches.length === 0
         ? passed(fallbackName)
         : failed(fallbackName, `scope mismatch (or missing event) for: ${fallbackMismatches.join(', ')}`),
+    );
+  }
+
+  // Issue #11 Tranche A: a not-found precondition failure MUST still emit
+  // exactly one AuditEvent — outcome: 'not_found', naming the caller-asserted
+  // (nonexistent) target under the relevant refs field — instead of
+  // returning silently, for every one of the seven interactions.
+  const notFoundScenario = await runNotFoundScenario(server, caller);
+  for (const what of requiredWhatValues) {
+    const name = `audit: a not-found ${what} call still emits exactly one AuditEvent with outcome: 'not_found'`;
+    const matching = notFoundScenario.get(what) ?? [];
+    const refsField = NOT_FOUND_REFS_FIELD[what];
+    const ok = matching.length === 1 && matching[0]?.outcome === 'not_found' && matching[0]?.refs[refsField] === NOT_FOUND_PROBE_ID;
+    checks.push(
+      ok
+        ? passed(name)
+        : failed(
+            name,
+            `expected exactly one AuditEvent{ what: '${what}', outcome: 'not_found', refs.${refsField}: '${NOT_FOUND_PROBE_ID}' }, got ${JSON.stringify(matching)}`,
+          ),
     );
   }
 

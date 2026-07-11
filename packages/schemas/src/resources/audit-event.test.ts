@@ -91,8 +91,74 @@ describe('auditEventSchema', () => {
     expectTypeOf<AuditEvent['what']>().toEqualTypeOf<
       'publish' | 'createConversation' | 'migrate' | 'drain' | 'stream' | 'send' | 'sendToolResult'
     >();
-    expectTypeOf<AuditEvent['outcome']>().toEqualTypeOf<'success' | 'failure'>();
+    expectTypeOf<AuditEvent['outcome']>().toEqualTypeOf<'success' | 'failure' | 'not_found'>();
     expectTypeOf<AuditEvent['refs']['credentialIds']>().toEqualTypeOf<string[] | undefined>();
     expectTypeOf<AuditEvent['degraded']>().toEqualTypeOf<boolean | undefined>();
+    expectTypeOf<NonNullable<AuditEvent['evidence']>['contentDigest']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<NonNullable<AuditEvent['evidence']>['agentVersionRef']>().toEqualTypeOf<{ agentDefinitionId: string; version: number } | undefined>();
+  });
+
+  // Issue #11 Tranche A: a not-found precondition failure must be
+  // distinguishable in the trail from an ordinary operational failure —
+  // `outcome: 'not_found'` is its own enum value, not folded into `failure`.
+  it("accepts outcome: 'not_found' with scope omitted (no primary resource was ever identified)", () => {
+    const { scope: _scope, ...withoutScope } = validAuditEvent;
+    const result = auditEventSchema.safeParse({ ...withoutScope, outcome: 'not_found', refs: { sessionId: 'does_not_exist' } });
+    expect(result.success, result.success ? undefined : JSON.stringify(result.error.issues)).toBe(true);
+  });
+
+  it("accepts outcome: 'not_found' with scope still present (e.g. createConversation's caller-supplied scope)", () => {
+    const result = auditEventSchema.safeParse({ ...validAuditEvent, outcome: 'not_found', refs: { definitionId: 'does_not_exist' } });
+    expect(result.success, result.success ? undefined : JSON.stringify(result.error.issues)).toBe(true);
+  });
+
+  it("rejects outcome: 'success' with scope omitted — scope is required unless outcome is 'not_found'", () => {
+    const { scope: _scope, ...withoutScope } = validAuditEvent;
+    const result = auditEventSchema.safeParse(withoutScope);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.path).toEqual(['scope']);
+  });
+
+  it("rejects outcome: 'failure' with scope omitted, the same as 'success'", () => {
+    const { scope: _scope, ...withoutScope } = validAuditEvent;
+    const result = auditEventSchema.safeParse({ ...withoutScope, outcome: 'failure' });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.path).toEqual(['scope']);
+  });
+
+  it('rejects an outcome value outside the success | failure | not_found vocabulary', () => {
+    const result = auditEventSchema.safeParse({ ...validAuditEvent, outcome: 'denied' });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.path).toEqual(['outcome']);
+  });
+
+  it('accepts evidence.contentDigest on a send AuditEvent', () => {
+    const result = auditEventSchema.safeParse({ ...validAuditEvent, evidence: { contentDigest: 'sha256:abc123' } });
+    expect(result.success, result.success ? undefined : JSON.stringify(result.error.issues)).toBe(true);
+  });
+
+  it('accepts evidence.agentVersionRef alongside contentDigest', () => {
+    const result = auditEventSchema.safeParse({
+      ...validAuditEvent,
+      evidence: { contentDigest: 'sha256:abc123', agentVersionRef: { agentDefinitionId: 'agentdef_1', version: 3 } },
+    });
+    expect(result.success, result.success ? undefined : JSON.stringify(result.error.issues)).toBe(true);
+  });
+
+  it('accepts an AuditEvent with no evidence field at all (the common case for most interactions)', () => {
+    const result = auditEventSchema.safeParse(validAuditEvent);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.evidence).toBeUndefined();
+  });
+
+  it('rejects an empty-string evidence.contentDigest', () => {
+    const result = auditEventSchema.safeParse({ ...validAuditEvent, evidence: { contentDigest: '' } });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.path).toEqual(['evidence', 'contentDigest']);
   });
 });

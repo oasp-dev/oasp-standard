@@ -3,6 +3,7 @@ import { agentDefinitionInputFactory } from '../../factories/agent-definition-in
 import { callerContextFactory } from '../../factories/caller-context-factory';
 import { createConversationInputFactory } from '../../factories/create-conversation-input-factory';
 import { testHarnessFactory } from '../../factories/test-harness-factory';
+import { computeContentDigest } from '../audit/compute-content-digest';
 
 describe('send', () => {
   it('posts content into the target session', async () => {
@@ -66,6 +67,24 @@ describe('send', () => {
     expect(result.error.code).toBe('Server.SessionNotFound');
   });
 
+  // Issue #11 Tranche A: a not-found probe MUST NOT vanish from the trail.
+  // The caller-supplied content is known regardless of whether a Session
+  // exists to receive it, so evidence.contentDigest is populated even here.
+  it('emits a not_found AuditEvent (not silence) naming the caller-asserted sessionId, with no fabricated scope, but still carrying the content digest', async () => {
+    const { server } = testHarnessFactory();
+    await server.send('does_not_exist', 'hello', callerContextFactory());
+
+    const events = server.listAuditEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      what: 'send',
+      outcome: 'not_found',
+      refs: { sessionId: 'does_not_exist' },
+      evidence: { contentDigest: computeContentDigest('hello') },
+    });
+    expect(events[0] && 'scope' in events[0]).toBe(false);
+  });
+
   it('emits exactly one AuditEvent{ what: "send" } scoped to the Conversation when bound', async () => {
     const { server } = testHarnessFactory();
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
@@ -81,6 +100,7 @@ describe('send', () => {
       outcome: 'success',
       scope: conversationResult.value.scope,
       refs: { sessionId: conversationResult.value.currentSessionId },
+      evidence: { contentDigest: computeContentDigest('hello'), agentVersionRef: conversationResult.value.pinnedAgentVersion },
     });
   });
 });

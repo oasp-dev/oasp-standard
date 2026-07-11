@@ -56,4 +56,17 @@ describe('publish', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ what: 'publish', outcome: 'success', scope: definition.scope, refs: { definitionId: definition.id } });
   });
+
+  // Issue #11 Tranche A: a not-found probe MUST NOT vanish from the trail.
+  it('emits a not_found AuditEvent (not silence) naming the caller-asserted definitionId, with no fabricated scope', async () => {
+    const { server } = testHarnessFactory();
+
+    const result = await server.publish('does_not_exist', callerContextFactory());
+    expect(result.ok).toBe(false);
+
+    const events = server.listAuditEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ what: 'publish', outcome: 'not_found', refs: { definitionId: 'does_not_exist' } });
+    expect(events[0] && 'scope' in events[0]).toBe(false);
+  });
 });

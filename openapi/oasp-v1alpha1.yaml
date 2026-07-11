@@ -844,7 +844,14 @@ components:
           description: Which v0 interaction this AuditEvent records.
         scope:
           description: The generalized-ownership attachment point the interaction occurred
-            within.
+            within. Required whenever `outcome` is `success` or `failure` (see
+            the cross-field check this schema enforces below); MAY be omitted
+            when `outcome` is `not_found`, since no primary resource was ever
+            identified to source a scope from. The one exception is
+            `createConversation`, whose `scope` comes from the caller-supplied
+            input rather than an existing resource, so it remains populatable
+            even on a `not_found` outcome — see docs/spec/audit.md § Not-found
+            preconditions.
           $ref: "#/components/schemas/Scope"
         when:
           type: string
@@ -859,7 +866,14 @@ components:
           enum:
             - success
             - failure
-          description: Whether the interaction succeeded or failed.
+            - not_found
+          description: "Whether the interaction succeeded, failed, or targeted a resource
+            that never existed. `not_found` is its own value — distinct from
+            `failure` — precisely so a probe against a nonexistent id is
+            distinguishable in the trail from an ordinary operational failure
+            (issue #11): a server MUST NOT return before emitting an AuditEvent
+            merely because its precondition check found nothing to act on. See
+            docs/spec/audit.md § Not-found preconditions."
         degraded:
           description: "Whether this interaction completed in a degraded mode that lost
             continuity it would otherwise have carried — e.g. a `migrate` whose
@@ -877,15 +891,18 @@ components:
           type: object
           properties:
             sessionId:
-              description: Identifier of the Session involved, if any.
+              description: Identifier of the Session involved, if any (or asserted by the
+                caller, on a not_found outcome).
               type: string
               minLength: 1
             conversationId:
-              description: Identifier of the Conversation involved, if any.
+              description: Identifier of the Conversation involved, if any (or asserted by the
+                caller, on a not_found outcome).
               type: string
               minLength: 1
             definitionId:
-              description: Identifier of the AgentDefinition involved, if any.
+              description: Identifier of the AgentDefinition involved, if any (or asserted by
+                the caller, on a not_found outcome).
               type: string
               minLength: 1
             credentialIds:
@@ -899,11 +916,46 @@ components:
           additionalProperties: false
           description: References to the session, conversation, definition, and/or
             credentials involved.
+        evidence:
+          description: "Action-specific evidence for this interaction — currently the
+            `send` content digest and the pinned AgentDefinition version, when
+            resolvable (issue #11, Tranche A). Omitted entirely (never `{}`)
+            when neither sub-field applies, per the same absence-is-the-sentinel
+            convention `degraded` uses."
+          type: object
+          properties:
+            contentDigest:
+              description: 'A canonical digest of the message content posted by `send`,
+                formatted `sha256:<hex>`. Populated on every `send` AuditEvent
+                regardless of outcome — the caller-supplied content is known
+                whether or not the send itself succeeded — and omitted for every
+                other `what` value. Answers "exactly what content was sent" from
+                the trail alone, without re-deriving it from provider-side
+                transcript storage. Distinct from the AgentDefinition
+                version-content hash `docs/spec/audit.md` also discusses: that
+                hash is deferred to issue #18 (no hash algorithm for it is
+                chosen here) — this digests the *message content*, never the
+                *AgentDefinition version*.'
+              type: string
+              minLength: 1
+            agentVersionRef:
+              description: "The AgentDefinition version pinned at the time of this interaction
+                — the plain `{ agentDefinitionId, version }` pointer, never a
+                content hash of that version (the cryptographic version hash
+                issue #11 also asked for is deferred to issue #18; this reuses
+                the same plain-integer `version` pin `AgentVersionRef` already
+                carries elsewhere, per std-10). Populated whenever the
+                interaction resolves a Session or Conversation, so its pin is
+                knowable; omitted on a `not_found` outcome (no resource was ever
+                resolved to source a pin from) and on `publish`, which advances
+                an AgentDefinition's own version pointer directly rather than
+                acting against an already-pinned Session/Conversation."
+              $ref: "#/components/schemas/AgentVersionRef"
+          additionalProperties: false
       required:
         - id
         - who
         - what
-        - scope
         - when
         - outcome
         - refs

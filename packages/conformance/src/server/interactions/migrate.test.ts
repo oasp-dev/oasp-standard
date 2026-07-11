@@ -45,6 +45,17 @@ describe('migrate — preconditions', () => {
     expect(result.error.code).toBe('Server.ConversationNotFound');
   });
 
+  // Issue #11 Tranche A: a not-found probe MUST NOT vanish from the trail.
+  it('emits a not_found AuditEvent (not silence) naming the caller-asserted conversationId, with no fabricated scope', async () => {
+    const { server } = testHarnessFactory();
+    await server.migrate('does_not_exist', callerContextFactory());
+
+    const events = server.listAuditEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ what: 'migrate', outcome: 'not_found', refs: { conversationId: 'does_not_exist' } });
+    expect(events[0] && 'scope' in events[0]).toBe(false);
+  });
+
   it('emits exactly one AuditEvent{ what: "migrate" } even for a no-op invocation', async () => {
     const { server } = testHarnessFactory();
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
@@ -58,7 +69,11 @@ describe('migrate — preconditions', () => {
 
     const events = server.listAuditEvents().filter((e) => e.what === 'migrate');
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ outcome: 'success', scope: conversationResult.value.scope });
+    expect(events[0]).toMatchObject({
+      outcome: 'success',
+      scope: conversationResult.value.scope,
+      evidence: { agentVersionRef: conversationResult.value.pinnedAgentVersion },
+    });
   });
 });
 
@@ -299,5 +314,32 @@ describe('migrate — Stage 3: drain to idle', () => {
     // The still-running newly minted session must never have been swapped in.
     const stored = server.getConversation(conversation.id);
     expect(stored?.currentSessionId).toBe(outgoingSessionId);
+  });
+
+  // Issue #9 landed pre-dispatch tool-call authorization for `drain`, reused
+  // by migrate's Stage 3 (see migrate.ts's Stage 3 doc comment). This proves
+  // that failure path — new since the #11 brief was scoped — was already
+  // audited before this slice (`migrateInteraction`'s `drainResult.ok`
+  // failure branch unconditionally emits before returning): a carried-over
+  // pending tool call the target version does NOT grant must reject the
+  // migrate and still leave a failure AuditEvent, never silence.
+  it('rejects (and audits) a carried-over pending tool call the target version does not grant, leaving currentSessionId unchanged', async () => {
+    const { server, controls, conversation } = await setUpConversationReadyToMigrate();
+    const outgoingSessionId = conversation.currentSessionId;
+    // 'delete_everything' is not among setUpConversationReadyToMigrate's granted
+    // tools (mcp 'a' and custom 'resume') — an unauthorized call, not a mere
+    // "still running" drain failure like the sibling test above.
+    controls.queuePendingToolCallForNextSession({ toolUseId: 'tooluse_unlisted', name: 'delete_everything', input: {} });
+
+    const result = await server.migrate(conversation.id, callerContextFactory());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('Server.UnauthorizedToolCall');
+
+    const stored = server.getConversation(conversation.id);
+    expect(stored?.currentSessionId).toBe(outgoingSessionId);
+
+    const events = server.listAuditEvents().filter((e) => e.what === 'migrate');
+    expect(events[events.length - 1]?.outcome).toBe('failure');
   });
 });
