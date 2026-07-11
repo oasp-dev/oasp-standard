@@ -340,10 +340,18 @@ translation.
    a `builtin_toolset`/`custom` call has none by definition, and an
    adapter whose provider integration genuinely cannot attribute an
    MCP-routed call to a specific server is not required to fabricate
-   one; per [interactions.md § `drain`](./interactions.md#drain)'s
-   authorization clause, an adapter MUST NOT report an `mcpServerUrl`
-   it cannot vouch for merely to get an otherwise-unlisted call past
-   that check.
+   one. Be aware that omission is **not** fail-closed under
+   [interactions.md § `drain`](./interactions.md#drain)'s authorization
+   clause: an unattributed call is checked against `custom` grants and
+   the builtin-toolset carve-out instead, so whenever the pinned
+   `AgentDefinition` grants any `builtin_toolset`, an MCP-routed call
+   whose provenance the adapter dropped is indistinguishable from a
+   builtin call and will be authorized. An adapter **SHOULD** therefore
+   surface `mcpServerUrl` whenever its provider integration can
+   attribute the call, and **MUST NOT** report an `mcpServerUrl` it
+   cannot vouch for (e.g. a granted server's URL stamped onto a call
+   that was not actually routed through it, waving the call past the
+   allowlist/origin check).
 6. **The suppression-marker transport itself** (as opposed to the
    guarantee it produces) — see [`seed`](#seed--the-transcript-seeding-transport-normative-resolution-of-a-deferred-s1-detail).
    *How* an adapter tells its provider "treat this as already

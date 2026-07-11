@@ -147,13 +147,22 @@ async function checkDrainResolvesPendingToolCalls(server: ReferenceServer, contr
  * `AgentDefinition` version's granted `tools`: entirely unlisted, from
  * an MCP server not granted at all, or excluded by a granted MCP
  * server's `toolAllowlist`. Exercises all three rejection paths plus
- * the baseline a genuinely granted call still drains to idle — a
- * server that (incorrectly) executes every enumerated call regardless
- * of the pinned Definition's grants would pass every OTHER check in
- * this file yet fail this one.
+ * two authorized baselines: (d) a genuinely granted MCP call still
+ * drains to idle, and (e) — the clause's builtin-toolset carve-out —
+ * a granted `builtin_toolset` authorizes ANY unattributed call (one
+ * reporting no MCP origin) regardless of its name, because OASP v0
+ * does not enumerate the concrete tool names a provider's builtin
+ * toolsets expose. Both baselines are load-bearing: without (e), a
+ * third-party server could unknowingly diverge by rejecting builtin
+ * calls the clause requires it to allow, and the very same call
+ * rejected in (a) (no grants at all) succeeding in (e) (builtin
+ * granted) is what pins the carve-out boundary down exactly. A server
+ * that (incorrectly) executes every enumerated call regardless of the
+ * pinned Definition's grants would pass every OTHER check in this
+ * file yet fail this one.
  */
 async function checkDrainRejectsUnauthorizedToolCalls(server: ReferenceServer, controls: MockProviderControls): Promise<CheckResult> {
-  const name = "server: drain rejects a pending tool call not authorized by the pinned AgentDefinition (unlisted tool, wrong MCP server origin, or toolAllowlist exclusion), before any dispatch — and still drains a genuinely granted call";
+  const name = "server: drain rejects a pending tool call not authorized by the pinned AgentDefinition (unlisted tool, wrong MCP server origin, or toolAllowlist exclusion), before any dispatch — and still drains a granted MCP call and, via the builtin-toolset carve-out, any unattributed call";
   const caller = callerContextFactory();
 
   // (a) Entirely unlisted: nothing granted at all.
@@ -215,6 +224,25 @@ async function checkDrainRejectsUnauthorizedToolCalls(server: ReferenceServer, c
   const grantedDrain = await server.drain(grantedSession.value.id, caller);
   if (!grantedDrain.ok) return failed(name, `expected a genuinely granted tool call to still drain successfully, got: ${grantedDrain.error.message}`);
   if (grantedDrain.value.status !== 'idle') return failed(name, `expected idle, got ${JSON.stringify(grantedDrain.value)}`);
+
+  // (e) Builtin-toolset carve-out baseline: the SAME unattributed call
+  // rejected in (a) MUST be authorized once a builtin_toolset is granted —
+  // OASP v0 does not enumerate builtin tool names, so a granted toolset
+  // authorizes any call reporting no MCP origin, regardless of its name
+  // (docs/spec/interactions.md § drain's authorization clause). A server
+  // rejecting this call would diverge from the clause just as surely as
+  // one executing the unauthorized ones above.
+  const builtinDefinition = await server.createAgentDefinition(
+    agentDefinitionInputFactory({ tools: [{ type: 'builtin_toolset', toolset: 'coding' }] }),
+  );
+  controls.queuePendingToolCallForNextSession({ toolUseId: 'tooluse_builtin', name: 'delete_everything', input: {} });
+  const builtinSession = await server.createBuilderSession(builtinDefinition.id);
+  if (!builtinSession.ok) return failed(name, builtinSession.error.message);
+  const builtinDrain = await server.drain(builtinSession.value.id, caller);
+  if (!builtinDrain.ok) {
+    return failed(name, `expected the builtin-toolset carve-out to authorize an unattributed call, got: ${builtinDrain.error.message}`);
+  }
+  if (builtinDrain.value.status !== 'idle') return failed(name, `expected idle, got ${JSON.stringify(builtinDrain.value)}`);
 
   return passed(name);
 }

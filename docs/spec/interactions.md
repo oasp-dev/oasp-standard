@@ -363,10 +363,19 @@ calls the provider is waiting on, using the Adapter contract's
   authorize it against the Session's pinned `AgentDefinition` version:
   the call's tool **MUST** be present in that version's granted `tools`
   ([`agentDefinitionSchema`](../../packages/schemas/src/resources/agent-definition.ts)),
-  an MCP-routed call **MUST** resolve to a granted `mcp` tool whose
-  `serverUrl` matches the call's reported origin, and — when that
+  a call reporting an MCP origin **MUST** resolve to a granted `mcp`
+  tool whose `serverUrl` matches that reported origin, and — when that
   grant's `toolAllowlist` is present — the call's name **MUST** be
-  included in it. A server **MUST** reject (never execute) any call
+  included in it. For a call reporting no MCP origin, "present" means
+  either an exact granted `custom` tool name match or — because OASP
+  v0 does not enumerate the concrete tool names a provider's builtin
+  toolsets expose (that vocabulary is provider-specific) — *any*
+  granted `builtin_toolset`, which necessarily authorizes every such
+  unattributed call regardless of its name: a server **MUST NOT**
+  reject an unattributed call on name grounds alone while a
+  `builtin_toolset` is granted, and **MUST** reject it when the
+  version grants neither a matching `custom` tool nor any
+  `builtin_toolset`. A server **MUST** reject (never execute) any call
   that fails this check; rejection **MUST** be surfaced as a `drain`
   failure, exactly as any other execution failure is. This
   authorization is independent of, and does not by itself satisfy, an
