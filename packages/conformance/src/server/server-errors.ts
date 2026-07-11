@@ -37,6 +37,11 @@ export const serverErrors = {
     code: 'Server.AdapterFailure',
     message: `Adapter operation "${operation}" failed: ${detail}`,
   }),
+  /** A pending tool call's name/server is not covered by the Session's pinned AgentDefinition version's granted tools — `drain` MUST reject it before any dispatch (`docs/spec/interactions.md` § `drain`'s authorization clause, issue #9), never invoking the `ToolExecutor` for it. */
+  unauthorizedToolCall: (sessionId: string, toolName: string, reason: string): DomainError => ({
+    code: 'Server.UnauthorizedToolCall',
+    message: `Session "${sessionId}" pending tool call "${toolName}" is not authorized by the pinned AgentDefinition: ${reason}`,
+  }),
   /** A session/conversation could not be created because its `AgentDefinition` has not been deployed to a provider yet. */
   notDeployed: (agentDefinitionId: string): DomainError => ({
     code: 'Server.NotDeployed',

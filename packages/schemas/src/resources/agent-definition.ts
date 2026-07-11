@@ -63,12 +63,14 @@ const mcpToolSchema = z
     auth: mcpAuthSchema,
     permissionPolicy: z
       .enum(['always_allow', 'always_ask'])
-      .describe('Whether tool calls to this server run without confirmation, or require per-call approval.'),
+      .describe(
+        'Declared tool-call policy for this server: `always_allow` — execute once the call is otherwise authorized against the grants of the pinned AgentDefinition version; `always_ask` — additionally require a per-call approval before execution. This field states policy intent a conformant server MUST honour; the approval mechanism `always_ask` requires is defined by a separate authorization sub-protocol, not by this field, and a server MUST NOT treat `always_ask` as satisfied merely by executing the call.',
+      ),
     toolAllowlist: z
       .array(z.string().min(1))
       .optional()
       .describe(
-        'If present, restricts usable tools on this server to this list; if absent, every tool the server exposes is usable.',
+        'Declared restriction a conformant server MUST enforce before dispatch: if present, only these tool names are usable on this server — a server MUST reject any other name pre-dispatch; if absent, every tool the server exposes is usable.',
       ),
   })
   .describe(

@@ -213,6 +213,29 @@ describe('runServerChecks', () => {
     expect(drainCheck?.passed).toBe(false);
   });
 
+  // Issue #9: checkDrainRejectsUnauthorizedToolCalls must catch a server that papers
+  // over an authorization rejection with a fabricated success outcome — simulating a
+  // server that dispatches every enumerated pending tool call regardless of whether
+  // it is actually covered by the pinned AgentDefinition's granted tools. A
+  // genuinely granted call is left untouched by this brokenServer, so only the
+  // rejection assertions are what this test proves the check catches.
+  it('catches a drain that ignores pinned-grant authorization, reporting success for an unauthorized pending tool call', async () => {
+    const { server: realServer, controls } = testHarnessFactory();
+    const brokenServer: typeof realServer = {
+      ...realServer,
+      drain: async (sessionId, caller) => {
+        const result = await realServer.drain(sessionId, caller);
+        return result.ok || result.error.code !== 'Server.UnauthorizedToolCall'
+          ? result
+          : { ok: true, value: { status: 'idle' as const, resolvedToolUseIds: [] } };
+      },
+    };
+
+    const results = await runServerChecks(brokenServer, controls);
+    const authorizationCheck = findCheck(results, 'not authorized by the pinned AgentDefinition');
+    expect(authorizationCheck?.passed).toBe(false);
+  });
+
   // N3(d): checkCreateConversationRejectsNeverPublishedDefinition must catch a server
   // that still falls back to pinning a real Conversation to draftVersion — the old,
   // non-conformant behaviour the SHOULD-fix on create-conversation.ts removed.

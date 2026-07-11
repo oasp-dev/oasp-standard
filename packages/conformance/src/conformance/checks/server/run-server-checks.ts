@@ -140,6 +140,113 @@ async function checkDrainResolvesPendingToolCalls(server: ReferenceServer, contr
     : failed(name, `expected drain to fail for a session that remains running after its pending calls are posted, got ${JSON.stringify(stillRunningDrain)}`);
 }
 
+/**
+ * `docs/spec/interactions.md` § `drain`'s authorization clause (issue
+ * #9): a server MUST reject — before ever invoking a tool dispatcher —
+ * a pending tool call not covered by the Session's pinned
+ * `AgentDefinition` version's granted `tools`: entirely unlisted, from
+ * an MCP server not granted at all, or excluded by a granted MCP
+ * server's `toolAllowlist`. Exercises all three rejection paths plus
+ * two authorized baselines: (d) a genuinely granted MCP call still
+ * drains to idle, and (e) — the clause's builtin-toolset carve-out —
+ * a granted `builtin_toolset` authorizes ANY unattributed call (one
+ * reporting no MCP origin) regardless of its name, because OASP v0
+ * does not enumerate the concrete tool names a provider's builtin
+ * toolsets expose. Both baselines are load-bearing: without (e), a
+ * third-party server could unknowingly diverge by rejecting builtin
+ * calls the clause requires it to allow, and the very same call
+ * rejected in (a) (no grants at all) succeeding in (e) (builtin
+ * granted) is what pins the carve-out boundary down exactly. A server
+ * that (incorrectly) executes every enumerated call regardless of the
+ * pinned Definition's grants would pass every OTHER check in this
+ * file yet fail this one.
+ */
+async function checkDrainRejectsUnauthorizedToolCalls(server: ReferenceServer, controls: MockProviderControls): Promise<CheckResult> {
+  const name = "server: drain rejects a pending tool call not authorized by the pinned AgentDefinition (unlisted tool, wrong MCP server origin, or toolAllowlist exclusion), before any dispatch — and still drains a granted MCP call and, via the builtin-toolset carve-out, any unattributed call";
+  const caller = callerContextFactory();
+
+  // (a) Entirely unlisted: nothing granted at all.
+  const bareDefinition = await server.createAgentDefinition(agentDefinitionInputFactory({ tools: [] }));
+  controls.queuePendingToolCallForNextSession({ toolUseId: 'tooluse_unlisted', name: 'delete_everything', input: {} });
+  const unlistedSession = await server.createBuilderSession(bareDefinition.id);
+  if (!unlistedSession.ok) return failed(name, unlistedSession.error.message);
+  const unlistedDrain = await server.drain(unlistedSession.value.id, caller);
+  if (unlistedDrain.ok) return failed(name, 'expected rejection of an entirely unlisted tool call, drain reported success');
+
+  const mcpDefinition = await server.createAgentDefinition(
+    agentDefinitionInputFactory({
+      tools: [
+        {
+          type: 'mcp',
+          serverUrl: 'https://mcp.example.com/granted',
+          label: 'Granted',
+          auth: 'none',
+          permissionPolicy: 'always_allow',
+          toolAllowlist: ['search'],
+        },
+      ],
+    }),
+  );
+
+  // (b) MCP call reporting a serverUrl that does not match any granted mcp server.
+  controls.queuePendingToolCallForNextSession({
+    toolUseId: 'tooluse_wrong_server',
+    name: 'search',
+    input: {},
+    mcpServerUrl: 'https://attacker.example.com/evil',
+  });
+  const wrongServerSession = await server.createBuilderSession(mcpDefinition.id);
+  if (!wrongServerSession.ok) return failed(name, wrongServerSession.error.message);
+  const wrongServerDrain = await server.drain(wrongServerSession.value.id, caller);
+  if (wrongServerDrain.ok) return failed(name, 'expected rejection of a call from an ungranted MCP server, drain reported success');
+
+  // (c) MCP call to the granted server, but excluded by its toolAllowlist.
+  controls.queuePendingToolCallForNextSession({
+    toolUseId: 'tooluse_excluded',
+    name: 'delete_repo',
+    input: {},
+    mcpServerUrl: 'https://mcp.example.com/granted',
+  });
+  const excludedSession = await server.createBuilderSession(mcpDefinition.id);
+  if (!excludedSession.ok) return failed(name, excludedSession.error.message);
+  const excludedDrain = await server.drain(excludedSession.value.id, caller);
+  if (excludedDrain.ok) return failed(name, 'expected rejection of a toolAllowlist-excluded call, drain reported success');
+
+  // (d) Baseline: a genuinely granted MCP call still drains to idle.
+  controls.queuePendingToolCallForNextSession({
+    toolUseId: 'tooluse_granted',
+    name: 'search',
+    input: {},
+    mcpServerUrl: 'https://mcp.example.com/granted',
+  });
+  const grantedSession = await server.createBuilderSession(mcpDefinition.id);
+  if (!grantedSession.ok) return failed(name, grantedSession.error.message);
+  const grantedDrain = await server.drain(grantedSession.value.id, caller);
+  if (!grantedDrain.ok) return failed(name, `expected a genuinely granted tool call to still drain successfully, got: ${grantedDrain.error.message}`);
+  if (grantedDrain.value.status !== 'idle') return failed(name, `expected idle, got ${JSON.stringify(grantedDrain.value)}`);
+
+  // (e) Builtin-toolset carve-out baseline: the SAME unattributed call
+  // rejected in (a) MUST be authorized once a builtin_toolset is granted —
+  // OASP v0 does not enumerate builtin tool names, so a granted toolset
+  // authorizes any call reporting no MCP origin, regardless of its name
+  // (docs/spec/interactions.md § drain's authorization clause). A server
+  // rejecting this call would diverge from the clause just as surely as
+  // one executing the unauthorized ones above.
+  const builtinDefinition = await server.createAgentDefinition(
+    agentDefinitionInputFactory({ tools: [{ type: 'builtin_toolset', toolset: 'coding' }] }),
+  );
+  controls.queuePendingToolCallForNextSession({ toolUseId: 'tooluse_builtin', name: 'delete_everything', input: {} });
+  const builtinSession = await server.createBuilderSession(builtinDefinition.id);
+  if (!builtinSession.ok) return failed(name, builtinSession.error.message);
+  const builtinDrain = await server.drain(builtinSession.value.id, caller);
+  if (!builtinDrain.ok) {
+    return failed(name, `expected the builtin-toolset carve-out to authorize an unattributed call, got: ${builtinDrain.error.message}`);
+  }
+  if (builtinDrain.value.status !== 'idle') return failed(name, `expected idle, got ${JSON.stringify(builtinDrain.value)}`);
+
+  return passed(name);
+}
+
 async function checkSendRejectsSupersededSession(server: ReferenceServer): Promise<CheckResult> {
   const name = 'server: send rejects a session superseded by migrate';
   const caller = callerContextFactory();
@@ -330,7 +437,8 @@ async function checkCreateConversationRejectsNeverPublishedDefinition(server: Re
  * the normative behaviours `docs/spec/interactions.md` requires:
  * version pinning preserved, lineage append-only oldest-first across
  * repeated migrations, migrate non-compounding (measured via the true
- * stored history), drain resolving pending tool calls, `send`'s
+ * stored history), drain resolving pending tool calls, drain's
+ * pre-dispatch pinned-grant authorization (issue #9), `send`'s
  * current-session enforcement, degrade-to-fresh-start on transcript
  * fetch failure (and that degradation being flagged, and ONLY flagged,
  * on the actually-degraded migrate — issue #12), publish not disturbing
@@ -351,6 +459,7 @@ export async function runServerChecks(server: ReferenceServer, controls: MockPro
     checkLineageAppendOnlyOldestFirst(server),
     checkMigrateNonCompounding(server),
     checkDrainResolvesPendingToolCalls(server, controls),
+    checkDrainRejectsUnauthorizedToolCalls(server, controls),
     checkSendRejectsSupersededSession(server),
     checkDegradesToFreshStartOnTranscriptFetchFailure(server, controls),
     checkNormalMigrateNotFlaggedDegraded(server),
