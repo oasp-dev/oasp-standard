@@ -1,9 +1,11 @@
-import { conversationSchema } from '@oasp/schemas';
+import { conversationSchema, type Credential } from '@oasp/schemas';
 import { describe, expect, it } from 'vitest';
 import type { AgentProvider } from '../../../adapter/agent-provider.types';
 import { testHarnessFactory } from '../../../factories/test-harness-factory';
 import { createMockAgentProvider } from '../../../mock/create-mock-agent-provider';
 import { createReferenceServer } from '../../../server/create-reference-server';
+import { resolveVaultIds } from '../../../server/credential/resolve-vault-ids';
+import { authorizePendingToolCall } from '../../../server/interactions/authorize-pending-tool-call';
 import { createFixedClock } from '../../../shared/fixed-clock';
 import { runServerChecks } from './run-server-checks';
 
@@ -211,6 +213,72 @@ describe('runServerChecks', () => {
     const results = await runServerChecks(brokenServer, controls);
     const drainCheck = findCheck(results, 'drain enumerates and resolves pending tool calls');
     expect(drainCheck?.passed).toBe(false);
+  });
+
+  // Issue #10 (B1): checkDrainVersionIsolation must catch a LIVE-READING server —
+  // one that authorizes pending tool calls against whatever the current, still-
+  // editable AgentDefinition holds instead of the pinned version's immutable
+  // content snapshot. The brokenServer below re-creates the pre-#10 behaviour
+  // faithfully: it runs the real authorizePendingToolCall, but feeds it the LIVE
+  // definition (getAgentDefinition) rather than the pinned version snapshot, and
+  // rejects before delegating — exactly what drainInteraction did before the fix.
+  // Crucially, such a server passes EVERY pre-existing check in this file (no other
+  // check edits draft content between pinning and driving a pinned interaction, so
+  // live and pinned content never differ for them) — only the version-isolation
+  // check separates it from a conformant one.
+  it('catches a live-reading drain: authorization resolved against the CURRENT AgentDefinition instead of the pinned version snapshot (the pre-#10 defect)', async () => {
+    const { server: realServer, controls, provider } = testHarnessFactory();
+    const brokenServer: typeof realServer = {
+      ...realServer,
+      drain: async (sessionId, caller) => {
+        const session = realServer.getSession(sessionId);
+        const liveDefinition = session && realServer.getAgentDefinition(session.pinnedAgentVersion.agentDefinitionId);
+        if (session && liveDefinition) {
+          const pending = await provider.getPendingToolCalls(sessionId);
+          if (pending.ok) {
+            const rejection = pending.value.map((call) => authorizePendingToolCall(liveDefinition, sessionId, call)).find((result) => !result.ok);
+            if (rejection && !rejection.ok) return rejection;
+          }
+        }
+        return realServer.drain(sessionId, caller);
+      },
+    };
+
+    const results = await runServerChecks(brokenServer, controls);
+    const isolationCheck = findCheck(results, "pinned version's own snapshotted grants");
+    expect(isolationCheck?.passed).toBe(false);
+    // The live-reading defect is invisible to the pre-#10 authorization check —
+    // asserted here to prove the new check is load-bearing, not redundant.
+    const preExistingAuthorizationCheck = findCheck(results, 'not authorized by the pinned AgentDefinition');
+    expect(preExistingAuthorizationCheck?.passed).toBe(true);
+  });
+
+  // Issue #10 (B1), migrate variant: checkMigrateVersionIsolation must catch a server
+  // whose Stage 1 resolves vaultIds against the LIVE definition's current tool grants
+  // instead of the target version's snapshot. Only the observability surface is
+  // corrupted (same technique as the degraded-flag teeth tests above): every Session
+  // read back reports vaultIds re-resolved against the live definition via the real
+  // resolveVaultIds — exactly the resolution a live-reading server would have stored.
+  it('catches a live-reading migrate: vaultIds resolved against the CURRENT AgentDefinition instead of the target version snapshot (the pre-#10 defect)', async () => {
+    const { server: realServer, controls } = testHarnessFactory();
+    const registeredCredentials = new Map<string, Credential>();
+    const brokenServer: typeof realServer = {
+      ...realServer,
+      registerCredential: (input) => {
+        const credential = realServer.registerCredential(input);
+        registeredCredentials.set(credential.id, credential);
+        return credential;
+      },
+      getSession: (id) => {
+        const session = realServer.getSession(id);
+        const liveDefinition = session && realServer.getAgentDefinition(session.pinnedAgentVersion.agentDefinitionId);
+        return session && liveDefinition ? { ...session, vaultIds: [...resolveVaultIds(liveDefinition, registeredCredentials)] } : session;
+      },
+    };
+
+    const results = await runServerChecks(brokenServer, controls);
+    const isolationCheck = findCheck(results, "TARGET version's snapshotted grants");
+    expect(isolationCheck?.passed).toBe(false);
   });
 
   // Issue #9: checkDrainRejectsUnauthorizedToolCalls must catch a server that papers

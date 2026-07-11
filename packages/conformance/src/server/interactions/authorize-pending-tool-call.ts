@@ -38,19 +38,31 @@ import { serverErrors } from '../server-errors';
  *    attempt to solve, not a gap introduced here. Absent that, the
  *    call is rejected as entirely unlisted.
  *
- * `definition` is whatever `ServerState.agentDefinitions` currently
- * holds for the Session's `pinnedAgentVersion.agentDefinitionId` — the
- * S0 schemas do not snapshot a Definition's tool grants per historical
- * version (see `migrate.ts`'s Stage 1 doc comment for the same
- * interpretation applied to `vaultIds` re-resolution); this function
- * inherits that same current-tools-array reading, not a new gap.
+ * `definitionVersion` is the immutable `AgentDefinitionVersion`
+ * snapshot the Session's `pinnedAgentVersion` resolves to (see
+ * `store/agent-definition-version-store.ts`), not the live, current
+ * `AgentDefinition` — issue #10 closed the gap this doc comment used
+ * to flag here: before that fix, the S0 schemas snapshotted no
+ * Definition's tool grants per historical version, so this function
+ * (like `migrate.ts`'s Stage 1 `vaultIds` re-resolution) necessarily
+ * read whatever the live `AgentDefinition` happened to hold *right
+ * now*, regardless of which version was actually pinned. This
+ * function's own parameter type only ever required `{ tools }`
+ * (`Pick<AgentDefinition, 'tools'>`), so no signature change was needed
+ * to accept a version snapshot in place of the live Definition — only
+ * its call sites (`drain.ts`, `migrate.ts`'s Stage 3 via
+ * `run-drain-to-idle.ts`) needed rewiring to pass one.
  *
- * Pure given `definition`/`sessionId`/`toolCall`; never touches
+ * Pure given `definitionVersion`/`sessionId`/`toolCall`; never touches
  * `ServerState`, the provider, or the executor itself.
  */
-export function authorizePendingToolCall(definition: AgentDefinition, sessionId: string, toolCall: PendingToolCall): Result<void, DomainError> {
+export function authorizePendingToolCall(
+  definitionVersion: Pick<AgentDefinition, 'tools'>,
+  sessionId: string,
+  toolCall: PendingToolCall,
+): Result<void, DomainError> {
   if (toolCall.mcpServerUrl !== undefined) {
-    const grant = definition.tools.find((tool) => tool.type === 'mcp' && tool.serverUrl === toolCall.mcpServerUrl);
+    const grant = definitionVersion.tools.find((tool) => tool.type === 'mcp' && tool.serverUrl === toolCall.mcpServerUrl);
     if (!grant) {
       return err(
         serverErrors.unauthorizedToolCall(sessionId, toolCall.name, `no granted MCP server matches the reported origin "${toolCall.mcpServerUrl}"`),
@@ -62,11 +74,11 @@ export function authorizePendingToolCall(definition: AgentDefinition, sessionId:
     return ok(undefined);
   }
 
-  const customMatch = definition.tools.some((tool) => tool.type === 'custom' && tool.name === toolCall.name);
+  const customMatch = definitionVersion.tools.some((tool) => tool.type === 'custom' && tool.name === toolCall.name);
   if (customMatch) return ok(undefined);
 
-  const builtinGranted = definition.tools.some((tool) => tool.type === 'builtin_toolset');
+  const builtinGranted = definitionVersion.tools.some((tool) => tool.type === 'builtin_toolset');
   if (builtinGranted) return ok(undefined);
 
-  return err(serverErrors.unauthorizedToolCall(sessionId, toolCall.name, "not present in the pinned AgentDefinition's granted tools"));
+  return err(serverErrors.unauthorizedToolCall(sessionId, toolCall.name, "not present in the pinned AgentDefinition version's granted tools"));
 }

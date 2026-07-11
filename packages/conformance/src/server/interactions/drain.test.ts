@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { agentDefinitionInputFactory } from '../../factories/agent-definition-input-factory';
 import { callerContextFactory } from '../../factories/caller-context-factory';
+import { createConversationInputFactory } from '../../factories/create-conversation-input-factory';
 import { testHarnessFactory } from '../../factories/test-harness-factory';
 import { createMockAgentProvider } from '../../mock/create-mock-agent-provider';
 import { mockSentinels } from '../../mock/mock-sentinels';
@@ -263,5 +264,52 @@ describe('drain — pinned-grant authorization (issue #9)', () => {
     // ...yet every enumerated call still got a posted (error) result, so none remains parked forever.
     const pendingAfter = await provider.getPendingToolCalls(sessionId);
     expect(pendingAfter).toEqual({ ok: true, value: [] });
+  });
+});
+
+describe('drain — version isolation from unpublished draft edits (issue #10)', () => {
+  // Before issue #10's per-version content snapshot store, `drainInteraction`
+  // resolved authorization against `state.agentDefinitions.get(...)` — the
+  // LIVE, currently-editable `AgentDefinition` — regardless of which version
+  // the Session actually claimed to be pinned to. This test proves the fix:
+  // a real Conversation's session, pinned to PUBLISHED v1, keeps resolving
+  // against v1's grants even after a later, still-UNPUBLISHED draft edit
+  // changes (here: revokes) the live AgentDefinition's tools. Under the
+  // pre-#10 behaviour this test would have failed with
+  // `Server.UnauthorizedToolCall`, since the live draft grants nothing by
+  // the time `drain` runs.
+  it('drains a session pinned to a published version using THAT version\'s grants, unaffected by a later unpublished draft edit revoking them', async () => {
+    const { server } = testHarnessFactory();
+    const definition = await server.createAgentDefinition(
+      agentDefinitionInputFactory({
+        tools: [{ type: 'custom', name: 'resume', description: 'Resumes a prior task.', inputSchema: {} }],
+      }),
+    );
+    await server.publish(definition.id, callerContextFactory());
+
+    const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+    if (!conversationResult.ok) throw new Error('setup failed');
+    const sessionId = conversationResult.value.currentSessionId;
+
+    // Park the v1-pinned session on a pending call for the tool v1 grants.
+    await server.send(sessionId, `${mockSentinels.toolUsePrefix}resume`, callerContextFactory());
+
+    // Advance the draft to v2, revoking 'resume' entirely — but never publish
+    // it. The Conversation/Session above remain pinned to published v1.
+    const editResult = await server.editAgentDefinitionDraft(definition.id, { tools: [] });
+    if (!editResult.ok) throw new Error('setup failed');
+    expect(server.getAgentDefinition(definition.id)?.tools).toEqual([]); // the live Definition genuinely changed...
+
+    const result = await server.drain(sessionId, callerContextFactory());
+
+    // ...yet the v1-pinned session still resolves against v1's OWN grants,
+    // which still include 'resume' — proving version isolation, not merely
+    // "nothing changed."
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('idle');
+
+    const drainEvents = server.listAuditEvents().filter((e) => e.what === 'drain');
+    expect(drainEvents[drainEvents.length - 1]?.outcome).toBe('success');
   });
 });

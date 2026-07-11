@@ -1,4 +1,5 @@
 import { agentDefinitionSchema } from '../resources/agent-definition';
+import { agentDefinitionVersionSchema } from '../resources/agent-definition-version';
 import { auditEventSchema } from '../resources/audit-event';
 import { conversationSchema } from '../resources/conversation';
 import { credentialSchema } from '../resources/credential';
@@ -20,6 +21,7 @@ import { sessionSchema } from '../resources/session';
  */
 export const RESOURCE_SCHEMAS = [
   agentDefinitionSchema,
+  agentDefinitionVersionSchema,
   deploymentSchema,
   conversationSchema,
   sessionSchema,

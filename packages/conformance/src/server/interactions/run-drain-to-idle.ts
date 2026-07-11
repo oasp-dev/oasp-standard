@@ -16,9 +16,10 @@ import type { DrainOutcome } from './drain.types';
  * the note in `migrate.ts` for that call.
  *
  * Enumerates every pending tool call via `getPendingToolCalls`, then
- * authorizes the ENTIRE enumerated batch against `definition` (the
- * pinned `AgentDefinition` version reachable from the Session's
- * `pinnedAgentVersion`, resolved by the caller via `ServerState` — see
+ * authorizes the ENTIRE enumerated batch against `definitionVersion`
+ * (the pinned `AgentDefinition` version's immutable content snapshot
+ * reachable from the Session's `pinnedAgentVersion`, resolved by the
+ * caller via `store/agent-definition-version-store.ts` — issue #10; see
  * `authorize-pending-tool-call.ts` and `docs/spec/interactions.md` §
  * `drain`'s authorization clause, issue #9) *before* dispatching any of
  * it to the injected `toolExecutor`. If any call in the batch is
@@ -47,14 +48,14 @@ import type { DrainOutcome } from './drain.types';
 export async function runDrainToIdle(
   provider: AgentProvider,
   toolExecutor: ToolExecutor,
-  definition: AgentDefinition,
+  definitionVersion: Pick<AgentDefinition, 'tools'>,
   sessionId: string,
 ): Promise<Result<DrainOutcome, DomainError>> {
   const pendingResult = await provider.getPendingToolCalls(sessionId);
   if (!pendingResult.ok) return err(serverErrors.adapterFailure('getPendingToolCalls', pendingResult.error.message));
 
   const authorizationFailure = pendingResult.value
-    .map((toolCall) => authorizePendingToolCall(definition, sessionId, toolCall))
+    .map((toolCall) => authorizePendingToolCall(definitionVersion, sessionId, toolCall))
     .find((result) => !result.ok);
 
   if (authorizationFailure && !authorizationFailure.ok) {

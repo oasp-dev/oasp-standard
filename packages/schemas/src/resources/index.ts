@@ -4,6 +4,7 @@
  * generated from these, never hand-maintained (see `src/generate/`).
  */
 export { agentDefinitionSchema, type AgentDefinition } from './agent-definition';
+export { agentDefinitionVersionSchema, type AgentDefinitionVersion } from './agent-definition-version';
 export { deploymentSchema, type Deployment } from './deployment';
 export { conversationSchema, type Conversation } from './conversation';
 export { sessionSchema, type Session } from './session';

@@ -124,9 +124,38 @@ merely convenient. Normative requirements:
 
 Together with the `pinnedAgentVersion` invariant above, this is enough
 to answer, for any point in a Conversation's history, exactly which
-agent version produced which turns — the foundation the forthcoming
-`AuditEvent` normative spec (S2, [#3](https://github.com/FieldstateNZ/oasp-standard/issues/3))
+agent version produced which turns — the foundation the `AuditEvent`
+normative spec (S2, [#3](https://github.com/FieldstateNZ/oasp-standard/issues/3))
 builds on.
+
+That answer is only as good as what `pinnedAgentVersion` actually
+resolves to, though. A bare `{ agentDefinitionId, version }` pointer
+(see
+[`agentVersionRefSchema`](../../packages/schemas/src/common/agent-version-ref.ts))
+names WHICH version produced a turn, but on its own says nothing about
+WHAT that version's instructions, tools, or guardrails actually were —
+and `AgentDefinition` stores only its CURRENT, still-mutable content,
+not a per-version history. Two different `pinnedAgentVersion` values
+are trivially distinguishable as integers; recovering what either one
+*meant*, content-wise, requires a version to be independently
+addressable as immutable content, not merely as a comparable pointer
+(issue [#10](https://github.com/FieldstateNZ/oasp-standard/issues/10)).
+The
+[`AgentDefinitionVersion`](../../packages/schemas/src/resources/agent-definition-version.ts)
+resource is that mechanism: a conformant server records one immutable
+content snapshot — instructions, provider, model, tools, guardrails —
+per `{ agentDefinitionId, version }` pair, at the moment that version
+number is minted (whether or not it is ever published), and every
+credential/tool-grant resolution that must act "as of" a pinned
+version reads from that snapshot rather than from the live
+`AgentDefinition`. Without it, "exactly which agent version produced
+which turns" answers only "an integer," not "what that integer's
+content was" — this document's own claim above would otherwise
+overreach the data model backing it. A cryptographic canonicalization
+or content-hash scheme for that snapshot is explicitly out of scope
+here — issue [#18](https://github.com/FieldstateNZ/oasp-standard/issues/18);
+the snapshot's identity is its `{ agentDefinitionId, version }` key
+alone.
 
 ## Out of scope here
 
