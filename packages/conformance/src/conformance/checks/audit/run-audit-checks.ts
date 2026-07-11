@@ -255,12 +255,22 @@ export async function runAuditChecks(server: ReferenceServer): Promise<CheckResu
 
   // Issue #11 Tranche A teeth: every interaction that resolves a Session or
   // Conversation MUST carry evidence.agentVersionRef naming the pinned
-  // AgentDefinition — asserts the actual id, not just "some ref is present".
+  // AgentDefinition version — asserts the actual id AND version, not just
+  // "some ref is present". The five pre-migrate interactions all ran against
+  // the Conversation's original pin; migrate's event records the TARGET
+  // version it migrated toward (see audit-event.ts's `agentVersionRef` doc),
+  // which after this scenario's successful migrate is the post-migrate pin.
   const agentVersionRefWhats: readonly AuditEvent['what'][] = ['createConversation', 'migrate', 'send', 'sendToolResult', 'drain', 'stream'];
-  const agentVersionRefName = 'audit: createConversation/migrate/send/sendToolResult/drain/stream AuditEvents carry evidence.agentVersionRef naming the pinned AgentDefinition';
+  const agentVersionRefName = 'audit: createConversation/migrate/send/sendToolResult/drain/stream AuditEvents carry evidence.agentVersionRef naming the pinned AgentDefinition version';
+  const expectedVersionFor = (what: AuditEvent['what']): number | undefined =>
+    what === 'migrate'
+      ? migrateResult.ok
+        ? migrateResult.value.pinnedAgentVersion.version
+        : undefined
+      : conversationResult.value.pinnedAgentVersion.version;
   const wrongAgentVersionRef = agentVersionRefWhats.filter((what) => {
-    const event = emitted.find((candidate) => candidate.what === what);
-    return event?.evidence?.agentVersionRef?.agentDefinitionId !== definition.id;
+    const ref = emitted.find((candidate) => candidate.what === what)?.evidence?.agentVersionRef;
+    return ref === undefined || ref.agentDefinitionId !== definition.id || ref.version !== expectedVersionFor(what);
   });
   checks.push(
     wrongAgentVersionRef.length === 0

@@ -24,8 +24,15 @@
 > optional, and add `evidence` — see
 > [Not-found preconditions](#not-found-preconditions-normative) and
 > [Action-specific evidence](#action-specific-evidence-issue-11-tranche-a)
-> below. Issue #11's `who`-identity-binding and authorization-denial
-> criteria (Tranches B/C) are sequenced behind
+> below. **The outcome-enum widening and the `scope` relaxation are
+> BREAKING for consumers pinned to the previously-published v1alpha1
+> `AuditEvent.json`**: the old artifact's closed
+> `success | failure` enum and unconditionally-required `scope` make an
+> old validator reject every `not_found` event and every scope-less
+> event a current server emits — re-pin to the regenerated artifact
+> (only `evidence` is purely additive). Issue #11's
+> `who`-identity-binding and authorization-denial criteria (Tranches
+> B/C) are sequenced behind
 > [issue #7](https://github.com/FieldstateNZ/oasp-standard/issues/7)
 > and out of scope here.
 

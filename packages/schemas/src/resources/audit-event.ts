@@ -57,7 +57,7 @@ const auditEvidenceSchema = z.object({
   agentVersionRef: agentVersionRefSchema
     .optional()
     .describe(
-      'The AgentDefinition version pinned at the time of this interaction — the plain `{ agentDefinitionId, version }` pointer, never a content hash of that version (the cryptographic version hash issue #11 also asked for is deferred to issue #18; this reuses the same plain-integer `version` pin `AgentVersionRef` already carries elsewhere, per std-10). Populated whenever the interaction resolves a Session or Conversation, so its pin is knowable; omitted on a `not_found` outcome (no resource was ever resolved to source a pin from) and on `publish`, which advances an AgentDefinition\'s own version pointer directly rather than acting against an already-pinned Session/Conversation.',
+      'The AgentDefinition version pinned — or, for `migrate`, being attempted — at the time of this interaction: a migrate that resolves a target version records that TARGET even when a later stage fails and the Conversation keeps its old pin (the no-op branches record the unchanged pin); every other interaction records the resolved Session/Conversation\'s pinned version. Always the plain `{ agentDefinitionId, version }` pointer, never a content hash of that version (the cryptographic version hash issue #11 also asked for is deferred to issue #18; this reuses the same plain-integer `version` pin `AgentVersionRef` already carries elsewhere, per std-10). Populated whenever the interaction resolves a Session or Conversation, so a pin is knowable; omitted on a `not_found` outcome (no resource was ever resolved to source a pin from) and on `publish`, which advances an AgentDefinition\'s own version pointer directly rather than acting against an already-pinned Session/Conversation.',
     ),
 });
 
@@ -117,16 +117,17 @@ export const auditEventSchema = z
       ),
   })
   .check((ctx) => {
-    // The one structural invariant a bare JSON-Schema shape cannot express on its
-    // own: `scope` is required for a resolved outcome (`success` | `failure`) —
-    // docs/spec/audit.md § Scope provenance's totality argument — but MAY be
-    // absent on `not_found`, where no primary resource was ever identified to
-    // source one from. Enforced here, not left to convention alone, because
-    // `emitAuditEvent`'s whole point is that every emitted event is schema-valid
-    // by construction — a `success`/`failure` event silently missing `scope`
-    // would otherwise slip through unnoticed. (This check is not representable
-    // in the generated JSON Schema / OpenAPI — the same accepted limitation
-    // `degraded`'s narrower prose-only constraint already lives with.)
+    // The cross-field invariant: `scope` is required for a resolved outcome
+    // (`success` | `failure`) — docs/spec/audit.md § Scope provenance's
+    // totality argument — but MAY be absent on `not_found`, where no primary
+    // resource was ever identified to source one from. Enforced here, not
+    // left to convention alone, because `emitAuditEvent`'s whole point is
+    // that every emitted event is schema-valid by construction — a
+    // `success`/`failure` event silently missing `scope` would otherwise slip
+    // through unnoticed. The SAME invariant is emitted declaratively into the
+    // generated JSON Schema / OpenAPI as the `if`/`else` conditional in this
+    // schema's `.meta()` below, so a non-TypeScript consumer validating
+    // against the published artifact enforces it too — keep the two in sync.
     if (ctx.value.outcome !== 'not_found' && ctx.value.scope === undefined) {
       ctx.issues.push({
         code: 'custom',
@@ -137,7 +138,21 @@ export const auditEventSchema = z
     }
   })
   .describe('The normative audit record emitted for every mutating interaction.')
-  .meta({ id: 'AuditEvent' });
+  .meta({
+    id: 'AuditEvent',
+    // JSON Schema 2020-12 conditional mirroring the `.check()` above: `scope`
+    // is required unless `outcome` is `'not_found'`. Zod's `toJSONSchema`
+    // merges extra `.meta()` keys verbatim into the generated output, so this
+    // lands in both schemas/v1alpha1/AuditEvent.json and the OpenAPI
+    // component without any generator change — the one place the invariant
+    // is stated for external validators, since a `.check()` refinement emits
+    // nothing. (`then` is deliberately absent: when the `if` matches —
+    // outcome IS `not_found` — no extra constraint applies. The `if` repeats
+    // `required: ['outcome']` so a hypothetical outcome-less instance falls
+    // to the `else` branch rather than vacuously matching.)
+    if: { properties: { outcome: { const: 'not_found' } }, required: ['outcome'] },
+    else: { required: ['scope'] },
+  });
 
 /** Inferred AuditEvent shape. Always derive from `auditEventSchema` — never hand-write. */
 export type AuditEvent = z.infer<typeof auditEventSchema>;

@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import { z } from 'zod';
 import { type AuditEvent, auditEventSchema } from './audit-event';
 
 const validAuditEvent = {
@@ -126,6 +127,24 @@ describe('auditEventSchema', () => {
     expect(result.success).toBe(false);
     if (result.success) return;
     expect(result.error.issues[0]?.path).toEqual(['scope']);
+  });
+
+  // The `.check()` above enforces the scope-unless-not_found invariant for
+  // TypeScript consumers only — a Zod refinement emits nothing into the
+  // generated JSON Schema. The published artifact carries the SAME invariant
+  // as a declarative `if`/`else` conditional injected via this schema's
+  // `.meta()` (which zod's `toJSONSchema` merges verbatim into its output);
+  // this test pins that the conditional actually survives generation, so a
+  // non-TypeScript consumer validating a scope-less success event against
+  // schemas/v1alpha1/AuditEvent.json rejects it exactly as Zod does. Without
+  // this, dropping the `.meta()` keys would silently reopen the gap: the
+  // drift gate (generate.test.ts) only proves source and artifact agree, not
+  // that either carries the conditionality.
+  it("emits the scope-unless-not_found conditional into the generated JSON Schema (if/else survives toJSONSchema; scope stays out of top-level required)", () => {
+    const generated = z.toJSONSchema(auditEventSchema, { target: 'draft-2020-12' }) as Record<string, unknown>;
+    expect(generated['if']).toEqual({ properties: { outcome: { const: 'not_found' } }, required: ['outcome'] });
+    expect(generated['else']).toEqual({ required: ['scope'] });
+    expect(generated['required']).not.toContain('scope');
   });
 
   it('rejects an outcome value outside the success | failure | not_found vocabulary', () => {

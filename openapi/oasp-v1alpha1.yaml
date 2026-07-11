@@ -939,13 +939,18 @@ components:
               type: string
               minLength: 1
             agentVersionRef:
-              description: "The AgentDefinition version pinned at the time of this interaction
-                — the plain `{ agentDefinitionId, version }` pointer, never a
-                content hash of that version (the cryptographic version hash
+              description: "The AgentDefinition version pinned — or, for `migrate`, being
+                attempted — at the time of this interaction: a migrate that
+                resolves a target version records that TARGET even when a later
+                stage fails and the Conversation keeps its old pin (the no-op
+                branches record the unchanged pin); every other interaction
+                records the resolved Session/Conversation's pinned version.
+                Always the plain `{ agentDefinitionId, version }` pointer, never
+                a content hash of that version (the cryptographic version hash
                 issue #11 also asked for is deferred to issue #18; this reuses
                 the same plain-integer `version` pin `AgentVersionRef` already
                 carries elsewhere, per std-10). Populated whenever the
-                interaction resolves a Session or Conversation, so its pin is
+                interaction resolves a Session or Conversation, so a pin is
                 knowable; omitted on a `not_found` outcome (no resource was ever
                 resolved to source a pin from) and on `publish`, which advances
                 an AgentDefinition's own version pointer directly rather than
@@ -961,6 +966,15 @@ components:
         - refs
       additionalProperties: false
       description: The normative audit record emitted for every mutating interaction.
+      if:
+        properties:
+          outcome:
+            const: not_found
+        required:
+          - outcome
+      else:
+        required:
+          - scope
 paths:
   /agent-definitions/{id}/publish:
     post:
