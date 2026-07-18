@@ -56,6 +56,7 @@ function agentDefinitionVersionKey(ref: Pick<AgentVersionRef, 'agentDefinitionId
  */
 export function snapshotAgentDefinitionVersion(state: ServerState, definition: AgentDefinition, version: number): void {
   const snapshot: AgentDefinitionVersion = structuredClone({
+    resourceType: 'AgentDefinitionVersion',
     agentDefinitionId: definition.id,
     version,
     instructions: definition.instructions,

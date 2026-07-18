@@ -4,6 +4,11 @@
   "title": "Session",
   "type": "object",
   "properties": {
+    "resourceType": {
+      "type": "string",
+      "const": "Session",
+      "description": "FHIR-style discriminator naming this resource type; MUST equal the resource type name."
+    },
     "id": {
       "type": "string",
       "minLength": 1,
@@ -105,6 +110,7 @@
     }
   },
   "required": [
+    "resourceType",
     "id",
     "pinnedAgentVersion",
     "resources",

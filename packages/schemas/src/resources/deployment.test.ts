@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { type Deployment, deploymentSchema } from './deployment';
 
 const validDeployment = {
+  resourceType: 'Deployment',
   id: 'deploy_1',
   agentDefinitionId: 'agentdef_1',
   provider: 'anthropic',
@@ -26,6 +27,7 @@ describe('deploymentSchema', () => {
 
   it('infers the expected shape', () => {
     expectTypeOf<Deployment>().toEqualTypeOf<{
+      resourceType: 'Deployment';
       id: string;
       agentDefinitionId: string;
       provider: 'anthropic' | 'openai' | 'google';

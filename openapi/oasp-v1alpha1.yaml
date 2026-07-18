@@ -7,6 +7,11 @@ components:
     AgentDefinition:
       type: object
       properties:
+        resourceType:
+          type: string
+          const: AgentDefinition
+          description: FHIR-style discriminator naming this resource type; MUST equal the
+            resource type name.
         id:
           type: string
           minLength: 1
@@ -162,6 +167,7 @@ components:
             to.
           $ref: "#/components/schemas/Scope"
       required:
+        - resourceType
         - id
         - name
         - instructions
@@ -209,6 +215,11 @@ components:
     AgentDefinitionVersion:
       type: object
       properties:
+        resourceType:
+          type: string
+          const: AgentDefinitionVersion
+          description: FHIR-style discriminator naming this resource type; MUST equal the
+            resource type name.
         agentDefinitionId:
           type: string
           minLength: 1
@@ -348,6 +359,7 @@ components:
             Structure beyond a name is left to profiles until two
             implementations interoperate on guardrail internals.
       required:
+        - resourceType
         - agentDefinitionId
         - version
         - instructions
@@ -361,6 +373,11 @@ components:
     Deployment:
       type: object
       properties:
+        resourceType:
+          type: string
+          const: Deployment
+          description: FHIR-style discriminator naming this resource type; MUST equal the
+            resource type name.
         id:
           type: string
           minLength: 1
@@ -393,6 +410,7 @@ components:
             same are idempotent — the existing Deployment is reused rather than
             re-materialized.
       required:
+        - resourceType
         - id
         - agentDefinitionId
         - provider
@@ -406,6 +424,11 @@ components:
     Conversation:
       type: object
       properties:
+        resourceType:
+          type: string
+          const: Conversation
+          description: FHIR-style discriminator naming this resource type; MUST equal the
+            resource type name.
         id:
           type: string
           minLength: 1
@@ -434,6 +457,7 @@ components:
             the current one, oldest first — the lineage `migrate` appends to on
             each session upgrade.
       required:
+        - resourceType
         - id
         - scope
         - initiatingPrincipal
@@ -490,6 +514,11 @@ components:
     Session:
       type: object
       properties:
+        resourceType:
+          type: string
+          const: Session
+          description: FHIR-style discriminator naming this resource type; MUST equal the
+            resource type name.
         id:
           type: string
           minLength: 1
@@ -568,6 +597,7 @@ components:
           description: Identifiers of the Credentials attached to this session, matched to
             MCP servers by URL at creation.
       required:
+        - resourceType
         - id
         - pinnedAgentVersion
         - resources
@@ -579,6 +609,11 @@ components:
       oneOf:
         - type: object
           properties:
+            resourceType:
+              type: string
+              const: Event
+              description: FHIR-style discriminator naming this resource type; MUST equal the
+                resource type name.
             id:
               type: string
               minLength: 1
@@ -603,6 +638,7 @@ components:
               minLength: 1
               description: Identifier of the assistant message beginning.
           required:
+            - resourceType
             - id
             - at
             - type
@@ -611,6 +647,11 @@ components:
           description: Marks the start of a new assistant message.
         - type: object
           properties:
+            resourceType:
+              type: string
+              const: Event
+              description: FHIR-style discriminator naming this resource type; MUST equal the
+                resource type name.
             id:
               type: string
               minLength: 1
@@ -638,6 +679,7 @@ components:
               type: string
               description: The incremental text content of this chunk.
           required:
+            - resourceType
             - id
             - at
             - type
@@ -647,6 +689,11 @@ components:
           description: An incremental text chunk of an in-progress assistant message.
         - type: object
           properties:
+            resourceType:
+              type: string
+              const: Event
+              description: FHIR-style discriminator naming this resource type; MUST equal the
+                resource type name.
             id:
               type: string
               minLength: 1
@@ -671,6 +718,7 @@ components:
               minLength: 1
               description: Identifier of the assistant message ending.
           required:
+            - resourceType
             - id
             - at
             - type
@@ -679,6 +727,11 @@ components:
           description: Marks the end of an assistant message.
         - type: object
           properties:
+            resourceType:
+              type: string
+              const: Event
+              description: FHIR-style discriminator naming this resource type; MUST equal the
+                resource type name.
             id:
               type: string
               minLength: 1
@@ -702,6 +755,7 @@ components:
               type: string
               description: The incremental thinking content of this chunk.
           required:
+            - resourceType
             - id
             - at
             - type
@@ -710,6 +764,11 @@ components:
           description: An incremental chunk of the assistant's extended thinking.
         - type: object
           properties:
+            resourceType:
+              type: string
+              const: Event
+              description: FHIR-style discriminator naming this resource type; MUST equal the
+                resource type name.
             id:
               type: string
               minLength: 1
@@ -745,6 +804,7 @@ components:
               additionalProperties: {}
               description: The input arguments passed to the custom tool.
           required:
+            - resourceType
             - id
             - at
             - type
@@ -755,6 +815,11 @@ components:
           description: An invocation of a custom tool defined on the AgentDefinition.
         - type: object
           properties:
+            resourceType:
+              type: string
+              const: Event
+              description: FHIR-style discriminator naming this resource type; MUST equal the
+                resource type name.
             id:
               type: string
               minLength: 1
@@ -789,6 +854,7 @@ components:
               additionalProperties: {}
               description: The input arguments passed to the builtin tool.
           required:
+            - resourceType
             - id
             - at
             - type
@@ -799,6 +865,11 @@ components:
           description: An invocation of a provider-hosted builtin tool.
         - type: object
           properties:
+            resourceType:
+              type: string
+              const: Event
+              description: FHIR-style discriminator naming this resource type; MUST equal the
+                resource type name.
             id:
               type: string
               minLength: 1
@@ -826,6 +897,7 @@ components:
                 - error
               description: The session's new status.
           required:
+            - resourceType
             - id
             - at
             - type
@@ -834,6 +906,11 @@ components:
           description: A transition in the session's status.
         - type: object
           properties:
+            resourceType:
+              type: string
+              const: Event
+              description: FHIR-style discriminator naming this resource type; MUST equal the
+                resource type name.
             id:
               type: string
               minLength: 1
@@ -862,6 +939,7 @@ components:
               description: Whether the session can continue after this error (e.g. via drain)
                 or is terminally failed.
           required:
+            - resourceType
             - id
             - at
             - type
@@ -873,6 +951,11 @@ components:
     Principal:
       type: object
       properties:
+        resourceType:
+          type: string
+          const: Principal
+          description: FHIR-style discriminator naming this resource type; MUST equal the
+            resource type name.
         id:
           type: string
           minLength: 1
@@ -920,6 +1003,7 @@ components:
           description: IdP-agnostic role names asserted for this principal, independent of
             scope membership.
       required:
+        - resourceType
         - id
         - kind
         - identity
@@ -930,6 +1014,11 @@ components:
     Credential:
       type: object
       properties:
+        resourceType:
+          type: string
+          const: Credential
+          description: FHIR-style discriminator naming this resource type; MUST equal the
+            resource type name.
         id:
           type: string
           minLength: 1
@@ -956,6 +1045,7 @@ components:
             specific Principal.
           $ref: "#/components/schemas/PrincipalRef"
       required:
+        - resourceType
         - id
         - provider
         - vaultId
@@ -967,6 +1057,11 @@ components:
     AuditEvent:
       type: object
       properties:
+        resourceType:
+          type: string
+          const: AuditEvent
+          description: FHIR-style discriminator naming this resource type; MUST equal the
+            resource type name.
         id:
           type: string
           minLength: 1
@@ -1112,6 +1207,7 @@ components:
               $ref: "#/components/schemas/AgentVersionRef"
           additionalProperties: false
       required:
+        - resourceType
         - id
         - who
         - what

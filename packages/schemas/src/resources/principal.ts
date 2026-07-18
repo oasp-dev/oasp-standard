@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { principalKindSchema } from '../common/principal-kind';
+import { resourceType } from '../common/resource-type';
 import { scopeSchema } from '../common/scope';
 
 /**
@@ -40,6 +41,7 @@ const principalIdentitySchema = z.object({
  */
 export const principalSchema = z
   .object({
+    resourceType: resourceType('Principal'),
     id: z.string().min(1).describe('Unique identifier of this Principal.'),
     kind: principalKindSchema.describe('The kind of acting party: a human user, a service, or an agent.'),
     identity: principalIdentitySchema.describe('The IdP-agnostic, OIDC-mappable claims-contract identity assertion.'),

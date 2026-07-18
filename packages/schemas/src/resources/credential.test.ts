@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { type Credential, credentialSchema } from './credential';
 
 const validCredential = {
+  resourceType: 'Credential',
   id: 'cred_1',
   provider: 'anthropic',
   vaultId: 'vault_ref_1',

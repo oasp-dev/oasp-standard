@@ -6,6 +6,7 @@ import { mockSentinels } from './mock-sentinels';
 
 function buildDefinition(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
   return {
+    resourceType: 'AgentDefinition',
     id: 'agentdef_1',
     name: 'Support Assistant',
     instructions: 'Be helpful.',

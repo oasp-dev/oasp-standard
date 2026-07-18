@@ -1,4 +1,5 @@
 {
+  "resourceType": "Session",
   "id": "sess_01hz3xf012",
   "pinnedAgentVersion": { "agentDefinitionId": "agentdef_01hz3x9k2v", "version": 6 },
   "resources": [

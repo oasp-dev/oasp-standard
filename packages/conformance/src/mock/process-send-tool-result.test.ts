@@ -7,7 +7,13 @@ import { processSendToolResult } from './process-send-tool-result';
 
 function buildParkedRecord(): MockSessionRecord {
   return {
-    session: { id: 'session_1', pinnedAgentVersion: { agentDefinitionId: 'agentdef_1', version: 1 }, resources: [], vaultIds: [] },
+    session: {
+      resourceType: 'Session',
+      id: 'session_1',
+      pinnedAgentVersion: { agentDefinitionId: 'agentdef_1', version: 1 },
+      resources: [],
+      vaultIds: [],
+    },
     status: 'running',
     events: [],
     idGenerator: createZeroPaddedIdGenerator('session_1'),

@@ -11,6 +11,10 @@ import type { ZeroPaddedIdGenerator } from '../shared/zero-padded-id-generator';
  * {@link Clock}, so it is reproducible run-to-run). Pure aside from
  * those two injected sources — no hidden `Date.now()`/counter state.
  */
-export function buildEvent(idGenerator: ZeroPaddedIdGenerator, clock: Clock, variant: DistributiveOmit<Event, 'id' | 'at'>): Event {
-  return { ...variant, id: idGenerator.next(), at: clock.now() } as Event;
+export function buildEvent(
+  idGenerator: ZeroPaddedIdGenerator,
+  clock: Clock,
+  variant: DistributiveOmit<Event, 'resourceType' | 'id' | 'at'>,
+): Event {
+  return { ...variant, resourceType: 'Event', id: idGenerator.next(), at: clock.now() } as Event;
 }

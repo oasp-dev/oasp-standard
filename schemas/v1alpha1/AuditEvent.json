@@ -4,6 +4,11 @@
   "title": "AuditEvent",
   "type": "object",
   "properties": {
+    "resourceType": {
+      "type": "string",
+      "const": "AuditEvent",
+      "description": "FHIR-style discriminator naming this resource type; MUST equal the resource type name."
+    },
     "id": {
       "type": "string",
       "minLength": 1,
@@ -111,6 +116,7 @@
     }
   },
   "required": [
+    "resourceType",
     "id",
     "who",
     "what",

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { type AuditEvent, auditEventSchema } from './audit-event';
 
 const validAuditEvent = {
+  resourceType: 'AuditEvent',
   id: 'audit_1',
   who: { principal: { kind: 'agent', id: 'agentdef_1' }, onBehalfOf: { kind: 'user', id: 'user_1' } },
   what: 'send',

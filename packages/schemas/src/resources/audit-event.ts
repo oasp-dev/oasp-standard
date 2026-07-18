@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { agentVersionRefSchema } from '../common/agent-version-ref';
 import { principalRefSchema } from '../common/principal-ref';
+import { resourceType } from '../common/resource-type';
 import { scopeSchema } from '../common/scope';
 
 /**
@@ -84,6 +85,7 @@ const auditEvidenceSchema = z.object({
  */
 export const auditEventSchema = z
   .object({
+    resourceType: resourceType('AuditEvent'),
     id: z.string().min(1).describe('Unique identifier of this AuditEvent.'),
     who: auditWhoSchema.describe('The acting principal, and the party it acted on behalf of, if any.'),
     what: z

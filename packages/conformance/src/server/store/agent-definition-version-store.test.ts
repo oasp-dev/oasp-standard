@@ -5,6 +5,7 @@ import { createServerState } from './server-state';
 
 function buildDefinition(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
   return {
+    resourceType: 'AgentDefinition',
     id: 'agentdef_1',
     name: 'Test',
     instructions: 'x',
@@ -32,6 +33,7 @@ describe('agent-definition-version-store', () => {
     snapshotAgentDefinitionVersion(state, definition, 1);
 
     expect(getAgentDefinitionVersion(state, { agentDefinitionId: 'agentdef_1', version: 1 })).toEqual({
+      resourceType: 'AgentDefinitionVersion',
       agentDefinitionId: 'agentdef_1',
       version: 1,
       instructions: definition.instructions,

@@ -148,6 +148,7 @@ export async function createConversationSetup(
   state.counters.conversation += 1;
   const conversationId = `conv_${state.counters.conversation}`;
   const conversation = conversationSchema.parse({
+    resourceType: 'Conversation',
     id: conversationId,
     scope: input.scope,
     initiatingPrincipal: input.initiatingPrincipal,

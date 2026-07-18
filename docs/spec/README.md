@@ -32,6 +32,7 @@ also logged in this slice's handback to the dev lead.
 
 | Document | Covers |
 |---|---|
+| [`resources.md`](./resources.md) | The FHIR-style `resourceType` discriminator every resource carries (and every datatype must not), the resource/datatype partition, the unknown-`resourceType` forward-compatibility contract, and how `AuditEvent.what` / `Event.type` compose beneath it. |
 | [`conversation-and-session.md`](./conversation-and-session.md) | The structural insight: Conversation ≠ Session, the warp/weft framing, the `previousSessionIds` lineage. Read this first — every interaction below falls out of it. |
 | [`interactions.md`](./interactions.md) | `publish`, `createConversation`, `migrate`, `drain`, `stream`, `send`, `sendToolResult` — full normative behaviour, including sequence diagrams for publish→migrate and drain-on-reopen. |
 | [`target-version-resolution.md`](./target-version-resolution.md) | The normative table resolving which `AgentDefinition` version a given session context targets when `migrate` runs. |

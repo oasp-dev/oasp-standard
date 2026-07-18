@@ -4,6 +4,11 @@
   "title": "AgentDefinition",
   "type": "object",
   "properties": {
+    "resourceType": {
+      "type": "string",
+      "const": "AgentDefinition",
+      "description": "FHIR-style discriminator naming this resource type; MUST equal the resource type name."
+    },
     "id": {
       "type": "string",
       "minLength": 1,
@@ -182,6 +187,7 @@
     }
   },
   "required": [
+    "resourceType",
     "id",
     "name",
     "instructions",

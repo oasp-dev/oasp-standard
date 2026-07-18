@@ -29,6 +29,42 @@ async function checkVersionPinningPreserved(server: ReferenceServer): Promise<Ch
 }
 
 /**
+ * `docs/spec/resources.md`'s core normative requirement, exercised
+ * black-box against a real server rather than only at the schema level
+ * (`resource-type-guard.test.ts` in `@oasp/schemas` already guards the
+ * schema *sources*; this proves a running server actually emits the
+ * discriminator on its wire responses, which a schema-level guard alone
+ * cannot catch — e.g. a server that hand-assembles a response object
+ * bypassing the schema entirely). Every resource this drive touches —
+ * the created `AgentDefinition`, the `Conversation` `createConversation`
+ * returns, and the `Session` it mints — MUST carry `resourceType` equal
+ * to its own PascalCase resource name.
+ */
+async function checkResourceTypeDiscriminator(server: ReferenceServer): Promise<CheckResult> {
+  const name = 'server: every resource response carries a resourceType equal to its own resource name';
+  const caller = callerContextFactory();
+  const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
+  if (definition.resourceType !== 'AgentDefinition') {
+    return failed(name, `AgentDefinition.resourceType was ${JSON.stringify(definition.resourceType)}, expected "AgentDefinition"`);
+  }
+
+  await server.publish(definition.id, caller);
+  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  if (!conversationResult.ok) return failed(name, conversationResult.error.message);
+  if (conversationResult.value.resourceType !== 'Conversation') {
+    return failed(name, `Conversation.resourceType was ${JSON.stringify(conversationResult.value.resourceType)}, expected "Conversation"`);
+  }
+
+  const session = server.getSession(conversationResult.value.currentSessionId);
+  if (!session) return failed(name, 'session not found');
+  if (session.resourceType !== 'Session') {
+    return failed(name, `Session.resourceType was ${JSON.stringify(session.resourceType)}, expected "Session"`);
+  }
+
+  return passed(name);
+}
+
+/**
  * Drives a Conversation through TWO migrations (not one) and asserts
  * the FULL ordered `previousSessionIds` — append vs. prepend are
  * indistinguishable with a single-element list, so one migration alone
@@ -541,7 +577,9 @@ async function checkCreateConversationRejectsNeverPublishedDefinition(server: Re
 /**
  * Drives a `ReferenceServer` through the seven interactions and asserts
  * the normative behaviours `docs/spec/interactions.md` requires:
- * version pinning preserved, lineage append-only oldest-first across
+ * version pinning preserved, every resource response carrying its
+ * `resourceType` discriminator (`docs/spec/resources.md`), lineage
+ * append-only oldest-first across
  * repeated migrations, migrate non-compounding (measured via the true
  * stored history), drain resolving pending tool calls, drain's
  * pre-dispatch pinned-grant authorization (issue #9), version isolation
@@ -564,6 +602,7 @@ async function checkCreateConversationRejectsNeverPublishedDefinition(server: Re
 export async function runServerChecks(server: ReferenceServer, controls: MockProviderControls): Promise<CheckResult[]> {
   return Promise.all([
     checkVersionPinningPreserved(server),
+    checkResourceTypeDiscriminator(server),
     checkLineageAppendOnlyOldestFirst(server),
     checkMigrateNonCompounding(server),
     checkDrainResolvesPendingToolCalls(server, controls),

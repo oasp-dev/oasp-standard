@@ -4,6 +4,7 @@ import { resolveTargetVersion } from './resolve-target-version';
 
 function buildDefinition(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
   return {
+    resourceType: 'AgentDefinition',
     id: 'agentdef_1',
     name: 'Test',
     instructions: 'x',

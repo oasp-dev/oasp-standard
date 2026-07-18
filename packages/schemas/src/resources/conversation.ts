@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { agentVersionRefSchema } from '../common/agent-version-ref';
 import { principalRefSchema } from '../common/principal-ref';
+import { resourceType } from '../common/resource-type';
 import { scopeSchema } from '../common/scope';
 
 /**
@@ -21,6 +22,7 @@ import { scopeSchema } from '../common/scope';
  */
 export const conversationSchema = z
   .object({
+    resourceType: resourceType('Conversation'),
     id: z.string().min(1).describe('Unique identifier of this Conversation.'),
     scope: scopeSchema.describe('The generalized-ownership attachment point this Conversation belongs to.'),
     initiatingPrincipal: principalRefSchema.describe('The Principal that started this Conversation.'),

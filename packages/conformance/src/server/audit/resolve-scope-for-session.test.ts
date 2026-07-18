@@ -5,6 +5,7 @@ import { resolveScopeForSession } from './resolve-scope-for-session';
 
 function buildDefinition(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
   return {
+    resourceType: 'AgentDefinition',
     id: 'agentdef_1',
     name: 'Test',
     instructions: 'x',
@@ -20,11 +21,19 @@ function buildDefinition(overrides: Partial<AgentDefinition> = {}): AgentDefinit
 }
 
 function buildSession(overrides: Partial<Session> = {}): Session {
-  return { id: 'session_1', pinnedAgentVersion: { agentDefinitionId: 'agentdef_1', version: 1 }, resources: [], vaultIds: [], ...overrides };
+  return {
+    resourceType: 'Session',
+    id: 'session_1',
+    pinnedAgentVersion: { agentDefinitionId: 'agentdef_1', version: 1 },
+    resources: [],
+    vaultIds: [],
+    ...overrides,
+  };
 }
 
 function buildConversation(overrides: Partial<Conversation> = {}): Conversation {
   return {
+    resourceType: 'Conversation',
     id: 'conv_1',
     scope: { level: 'workspace', id: 'workspace_conversation_scope' },
     initiatingPrincipal: { kind: 'user', id: 'user_1' },

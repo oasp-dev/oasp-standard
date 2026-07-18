@@ -1,4 +1,5 @@
 {
+  "resourceType": "AgentDefinitionVersion",
   "agentDefinitionId": "agentdef_01hz3x9k2v",
   "version": 0,
   "instructions": "You are the LucidBrain workspace assistant.",
