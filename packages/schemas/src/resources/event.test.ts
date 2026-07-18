@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { type Event, eventSchema } from './event';
 
-const base = { id: 'evt_1', at: '2026-01-01T00:00:00.000Z' };
+const base = { resourceType: 'Event', id: 'evt_1', at: '2026-01-01T00:00:00.000Z' };
 
 describe('eventSchema', () => {
   it.each([

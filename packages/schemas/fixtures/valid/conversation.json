@@ -1,4 +1,5 @@
 {
+  "resourceType": "Conversation",
   "id": "conv_01hz3xcz88",
   "scope": { "level": "workspace", "id": "workspace_9f2a1c" },
   "initiatingPrincipal": { "kind": "user", "id": "user_3b7c9d" },

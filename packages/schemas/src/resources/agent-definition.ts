@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { agentDefinitionContentSchema } from '../common/agent-definition-content';
+import { resourceType } from '../common/resource-type';
 import { scopeSchema } from '../common/scope';
 
 /**
@@ -35,6 +36,7 @@ import { scopeSchema } from '../common/scope';
  */
 export const agentDefinitionSchema = z
   .object({
+    resourceType: resourceType('AgentDefinition'),
     id: z.string().min(1).describe('Unique identifier of this AgentDefinition.'),
     name: z.string().min(1).describe('Human-readable name of the agent.'),
     ...agentDefinitionContentSchema.shape,

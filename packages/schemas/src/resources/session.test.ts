@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { type Session, sessionSchema } from './session';
 
 const validSession = {
+  resourceType: 'Session',
   id: 'sess_1',
   pinnedAgentVersion: { agentDefinitionId: 'agentdef_1', version: 4 },
   resources: [

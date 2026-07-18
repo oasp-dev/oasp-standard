@@ -46,6 +46,7 @@ export async function createAgentDefinitionSetup(
   const id = `agentdef_${state.counters.agentDefinition}`;
 
   const definition = agentDefinitionSchema.parse({
+    resourceType: 'AgentDefinition',
     id,
     name: input.name,
     instructions: input.instructions,

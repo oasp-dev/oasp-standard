@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { agentDefinitionContentSchema } from '../common/agent-definition-content';
 import { agentVersionRefSchema } from '../common/agent-version-ref';
+import { resourceType } from '../common/resource-type';
 
 /**
  * An immutable, per-version content snapshot of an `AgentDefinition`:
@@ -64,6 +65,7 @@ import { agentVersionRefSchema } from '../common/agent-version-ref';
  */
 export const agentDefinitionVersionSchema = z
   .object({
+    resourceType: resourceType('AgentDefinitionVersion'),
     ...agentVersionRefSchema.shape,
     ...agentDefinitionContentSchema.shape,
   })

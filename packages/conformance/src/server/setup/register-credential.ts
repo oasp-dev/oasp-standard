@@ -18,6 +18,7 @@ export function registerCredentialSetup(state: ServerState, input: RegisterCrede
   const id = `credential_${state.counters.credential}`;
 
   const credential = credentialSchema.parse({
+    resourceType: 'Credential',
     id,
     provider: input.provider,
     vaultId: input.vaultId,

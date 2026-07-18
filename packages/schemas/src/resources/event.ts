@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { resourceType } from '../common/resource-type';
 
 /**
  * Fields common to every event variant. Every adapter-emitted event
@@ -9,10 +10,17 @@ import { z } from 'zod';
  * merged into every branch of {@link eventSchema}'s discriminated
  * union.
  *
+ * Carries `resourceType: 'Event'` — every branch of the union is a
+ * variant of the single `Event` *resource*, discriminated further by
+ * its own `type`; `resourceType` names the resource, `type` names the
+ * event kind within it, exactly as `AuditEvent.what` sub-discriminates
+ * beneath `AuditEvent.resourceType`.
+ *
  * @see docs/oasp-v0-concept.md § Event
  * @see docs/oasp-v0-concept.md § Adapter contract
  */
 const eventBaseSchema = z.object({
+  resourceType: resourceType('Event'),
   id: z
     .string()
     .min(1)

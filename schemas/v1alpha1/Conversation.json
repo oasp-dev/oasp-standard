@@ -4,6 +4,11 @@
   "title": "Conversation",
   "type": "object",
   "properties": {
+    "resourceType": {
+      "type": "string",
+      "const": "Conversation",
+      "description": "FHIR-style discriminator naming this resource type; MUST equal the resource type name."
+    },
     "id": {
       "type": "string",
       "minLength": 1,
@@ -36,6 +41,7 @@
     }
   },
   "required": [
+    "resourceType",
     "id",
     "scope",
     "initiatingPrincipal",

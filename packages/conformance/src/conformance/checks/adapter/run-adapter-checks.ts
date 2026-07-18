@@ -68,8 +68,8 @@ async function checkEventOrderingLexicographic(provider: AgentProvider): Promise
 async function checkNoUnsolicitedTurnFromSeeding(provider: AgentProvider): Promise<CheckResult> {
   const name = 'adapter: a freshly seeded session does not emit an unsolicited assistant_message_start';
   const seedEvents = [
-    { id: 'old_0', at: '2026-01-01T00:00:00.000Z', type: 'assistant_message_start' as const, messageId: 'm1' },
-    { id: 'old_1', at: '2026-01-01T00:00:01.000Z', type: 'assistant_message_end' as const, messageId: 'm1' },
+    { resourceType: 'Event' as const, id: 'old_0', at: '2026-01-01T00:00:00.000Z', type: 'assistant_message_start' as const, messageId: 'm1' },
+    { resourceType: 'Event' as const, id: 'old_1', at: '2026-01-01T00:00:01.000Z', type: 'assistant_message_end' as const, messageId: 'm1' },
   ];
   const session = await provider.createSession({
     ...BASE_SESSION_OPTIONS,

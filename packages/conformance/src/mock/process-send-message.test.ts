@@ -8,7 +8,13 @@ import { processSendMessage } from './process-send-message';
 
 function buildRecord(): MockSessionRecord {
   return {
-    session: { id: 'session_1', pinnedAgentVersion: { agentDefinitionId: 'agentdef_1', version: 1 }, resources: [], vaultIds: [] },
+    session: {
+      resourceType: 'Session',
+      id: 'session_1',
+      pinnedAgentVersion: { agentDefinitionId: 'agentdef_1', version: 1 },
+      resources: [],
+      vaultIds: [],
+    },
     status: 'idle',
     events: [],
     idGenerator: createZeroPaddedIdGenerator('session_1'),

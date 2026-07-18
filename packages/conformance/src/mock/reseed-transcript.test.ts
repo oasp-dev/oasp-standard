@@ -5,9 +5,16 @@ import { createZeroPaddedIdGenerator } from '../shared/zero-padded-id-generator'
 import { reseedTranscript } from './reseed-transcript';
 
 const outgoingEvents: Event[] = [
-  { id: 'session_old_0000000000', at: '2026-01-01T00:00:00.000Z', type: 'assistant_message_start', messageId: 'm1' },
-  { id: 'session_old_0000000001', at: '2026-01-01T00:00:01.000Z', type: 'assistant_message_text', messageId: 'm1', delta: 'hi' },
-  { id: 'session_old_0000000002', at: '2026-01-01T00:00:02.000Z', type: 'assistant_message_end', messageId: 'm1' },
+  { resourceType: 'Event', id: 'session_old_0000000000', at: '2026-01-01T00:00:00.000Z', type: 'assistant_message_start', messageId: 'm1' },
+  {
+    resourceType: 'Event',
+    id: 'session_old_0000000001',
+    at: '2026-01-01T00:00:01.000Z',
+    type: 'assistant_message_text',
+    messageId: 'm1',
+    delta: 'hi',
+  },
+  { resourceType: 'Event', id: 'session_old_0000000002', at: '2026-01-01T00:00:02.000Z', type: 'assistant_message_end', messageId: 'm1' },
 ];
 
 describe('reseedTranscript', () => {

@@ -52,6 +52,7 @@ export function createMockAgentProvider(options: MockAgentProviderOptions): {
   function buildDeployment(definition: AgentDefinition, environmentId: string, providerAgentId: string): Deployment {
     deploymentCounter += 1;
     return {
+      resourceType: 'Deployment',
       id: `deployment_${deploymentCounter}`,
       agentDefinitionId: definition.id,
       provider: definition.provider,
@@ -103,6 +104,7 @@ export function createMockAgentProvider(options: MockAgentProviderOptions): {
       const events = sessionOptions.seed ? reseedTranscript(sessionOptions.seed.events, idGenerator, clock) : [];
 
       const session: Session = {
+        resourceType: 'Session',
         id: sessionId,
         pinnedAgentVersion: sessionOptions.pinnedAgentVersion,
         resources: sessionOptions.resources,

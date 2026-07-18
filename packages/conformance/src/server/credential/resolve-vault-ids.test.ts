@@ -4,6 +4,7 @@ import { resolveVaultIds } from './resolve-vault-ids';
 
 function buildDefinition(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
   return {
+    resourceType: 'AgentDefinition',
     id: 'agentdef_1',
     name: 'Test',
     instructions: 'x',
@@ -20,6 +21,7 @@ function buildDefinition(overrides: Partial<AgentDefinition> = {}): AgentDefinit
 
 function buildCredential(overrides: Partial<Credential> = {}): Credential {
   return {
+    resourceType: 'Credential',
     id: 'credential_1',
     provider: 'anthropic',
     vaultId: 'vault_1',

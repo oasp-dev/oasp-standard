@@ -1,4 +1,5 @@
 {
+  "resourceType": "AuditEvent",
   "id": "audit_01hz3xk321",
   "who": {
     "principal": { "kind": "agent", "id": "agentdef_01hz3x9k2v" },

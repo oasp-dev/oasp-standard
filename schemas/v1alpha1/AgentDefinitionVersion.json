@@ -4,6 +4,11 @@
   "title": "AgentDefinitionVersion",
   "type": "object",
   "properties": {
+    "resourceType": {
+      "type": "string",
+      "const": "AgentDefinitionVersion",
+      "description": "FHIR-style discriminator naming this resource type; MUST equal the resource type name."
+    },
     "agentDefinitionId": {
       "type": "string",
       "minLength": 1,
@@ -160,6 +165,7 @@
     }
   },
   "required": [
+    "resourceType",
     "agentDefinitionId",
     "version",
     "instructions",

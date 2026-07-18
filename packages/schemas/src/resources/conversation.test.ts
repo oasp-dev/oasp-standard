@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { type Conversation, conversationSchema } from './conversation';
 
 const validConversation = {
+  resourceType: 'Conversation',
   id: 'conv_1',
   scope: { level: 'workspace', id: 'workspace_1' },
   initiatingPrincipal: { kind: 'user', id: 'user_1' },

@@ -35,7 +35,7 @@ describe('runClientChecks', () => {
 
   it('catches a stream that does not terminate on idle or a fatal error', async () => {
     const nonTerminating: Event[] = [
-      { id: 'e1', at: '2026-01-01T00:00:00.000Z', type: 'status', status: 'running' },
+      { resourceType: 'Event', id: 'e1', at: '2026-01-01T00:00:00.000Z', type: 'status', status: 'running' },
     ];
     const results = await runClientChecks(toAsyncIterable(nonTerminating));
     const terminationCheck = results.find((r) => r.name.includes('terminates'));
@@ -44,8 +44,8 @@ describe('runClientChecks', () => {
 
   it('catches non-lexicographically-sorted ids (the exact unpadded-counter failure mode S1 warns about: "2" emitted before "10")', async () => {
     const outOfOrder: Event[] = [
-      { id: 'sess_2', at: '2026-01-01T00:00:00.000Z', type: 'status', status: 'running' },
-      { id: 'sess_10', at: '2026-01-01T00:00:01.000Z', type: 'status', status: 'idle' },
+      { resourceType: 'Event', id: 'sess_2', at: '2026-01-01T00:00:00.000Z', type: 'status', status: 'running' },
+      { resourceType: 'Event', id: 'sess_10', at: '2026-01-01T00:00:01.000Z', type: 'status', status: 'idle' },
     ];
     // As byte strings, "sess_10" < "sess_2" — so this emission order is NOT
     // lexicographically ascending, exactly the bug zero-padding prevents.

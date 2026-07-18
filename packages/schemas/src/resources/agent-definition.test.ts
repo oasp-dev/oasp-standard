@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { type AgentDefinition, agentDefinitionSchema } from './agent-definition';
 
 const validAgentDefinition = {
+  resourceType: 'AgentDefinition',
   id: 'agentdef_1',
   name: 'Support Assistant',
   instructions: 'Help members with their support tickets.',

@@ -2,8 +2,8 @@ import { auditEventSchema, type AuditEvent } from '@oasp/schemas';
 import type { Clock } from '../../shared/clock.types';
 import type { ServerState } from '../store/server-state';
 
-/** The fields a caller supplies to emit an `AuditEvent` — everything except `id`/`when`, which this function assigns. */
-export type EmitAuditEventInput = Omit<AuditEvent, 'id' | 'when'>;
+/** The fields a caller supplies to emit an `AuditEvent` — everything except `resourceType`/`id`/`when`, which this function assigns. */
+export type EmitAuditEventInput = Omit<AuditEvent, 'resourceType' | 'id' | 'when'>;
 
 /**
  * Constructs, validates, and appends one `AuditEvent` to the server's
@@ -21,6 +21,7 @@ export type EmitAuditEventInput = Omit<AuditEvent, 'id' | 'when'>;
 export function emitAuditEvent(state: ServerState, clock: Clock, input: EmitAuditEventInput): AuditEvent {
   state.counters.audit += 1;
   const candidate: AuditEvent = {
+    resourceType: 'AuditEvent',
     id: `audit_${state.counters.audit}`,
     who: input.who,
     what: input.what,

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { providerSchema } from '../common/provider';
+import { resourceType } from '../common/resource-type';
 
 /**
  * A materialization of an AgentDefinition at a specific provider and
@@ -17,6 +18,7 @@ import { providerSchema } from '../common/provider';
  */
 export const deploymentSchema = z
   .object({
+    resourceType: resourceType('Deployment'),
     id: z.string().min(1).describe('Unique identifier of this Deployment.'),
     agentDefinitionId: z.string().min(1).describe('Identifier of the AgentDefinition this Deployment materializes.'),
     provider: providerSchema.describe('The provider this Definition was deployed to.'),

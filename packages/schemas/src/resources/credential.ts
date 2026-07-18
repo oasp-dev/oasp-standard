@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { principalRefSchema } from '../common/principal-ref';
 import { providerSchema } from '../common/provider';
+import { resourceType } from '../common/resource-type';
 import { scopeSchema } from '../common/scope';
 
 /**
@@ -20,6 +21,7 @@ import { scopeSchema } from '../common/scope';
  */
 export const credentialSchema = z
   .object({
+    resourceType: resourceType('Credential'),
     id: z.string().min(1).describe('Unique identifier of this Credential.'),
     provider: providerSchema.describe('The provider whose vault holds the referenced secret.'),
     vaultId: z.string().min(1).describe("Reference into the provider's own secret vault. The secret itself is never stored here."),

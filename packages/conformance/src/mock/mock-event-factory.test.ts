@@ -10,7 +10,13 @@ describe('buildEvent', () => {
 
     const event = buildEvent(idGenerator, clock, { type: 'status', status: 'idle' });
 
-    expect(event).toEqual({ type: 'status', status: 'idle', id: 'sess_1_0000000000', at: '2026-01-01T00:00:00.000Z' });
+    expect(event).toEqual({
+      resourceType: 'Event',
+      type: 'status',
+      status: 'idle',
+      id: 'sess_1_0000000000',
+      at: '2026-01-01T00:00:00.000Z',
+    });
   });
 
   it('produces lexicographically increasing ids across successive calls', () => {

@@ -1,4 +1,5 @@
 {
+  "resourceType": "Deployment",
   "id": "deploy_01hz3xab12",
   "agentDefinitionId": "agentdef_01hz3x9k2v",
   "provider": "anthropic",

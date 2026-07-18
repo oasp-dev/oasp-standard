@@ -9,3 +9,4 @@ export { principalKindSchema, type PrincipalKind } from './principal-kind';
 export { principalRefSchema, type PrincipalRef } from './principal-ref';
 export { agentVersionRefSchema, type AgentVersionRef } from './agent-version-ref';
 export { agentDefinitionContentSchema, type AgentDefinitionContent } from './agent-definition-content';
+export { resourceType } from './resource-type';

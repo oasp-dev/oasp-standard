@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { agentVersionRefSchema } from '../common/agent-version-ref';
+import { resourceType } from '../common/resource-type';
 
 /**
  * A single mounted file. Not exported: a private building block of
@@ -71,6 +72,7 @@ const sessionResourceSchema = z.discriminatedUnion('type', [
  */
 export const sessionSchema = z
   .object({
+    resourceType: resourceType('Session'),
     id: z.string().min(1).describe('Unique identifier of this Session.'),
     pinnedAgentVersion: agentVersionRefSchema.describe('The immutable AgentDefinition version this Session was created against.'),
     resources: z

@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { type Principal, principalSchema } from './principal';
 
 const validPrincipal = {
+  resourceType: 'Principal',
   id: 'user_1',
   kind: 'user',
   identity: { subject: 'auth0|abc123', issuer: 'https://example.auth0.com/', email: 'a@example.com' },

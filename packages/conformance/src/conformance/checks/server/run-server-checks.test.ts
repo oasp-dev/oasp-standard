@@ -324,6 +324,7 @@ describe('runServerChecks', () => {
         return {
           ok: true,
           value: conversationSchema.parse({
+            resourceType: 'Conversation',
             id: `conv_broken_${sessionResult.value.id}`,
             scope: input.scope,
             initiatingPrincipal: input.initiatingPrincipal,
