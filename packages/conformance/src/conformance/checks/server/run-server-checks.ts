@@ -1,5 +1,5 @@
 import { agentDefinitionInputFactory } from '../../../factories/agent-definition-input-factory';
-import { callerContextFactory } from '../../../factories/caller-context-factory';
+import { authenticatedActorFactory } from '../../../factories/authenticated-actor-factory';
 import { createConversationInputFactory } from '../../../factories/create-conversation-input-factory';
 import { registerCredentialInputFactory } from '../../../factories/register-credential-input-factory';
 import type { MockProviderControls } from '../../../mock/mock-provider-controls.types';
@@ -15,10 +15,10 @@ async function countStoredEvents(server: ReferenceServer, sessionId: string): Pr
 
 async function checkVersionPinningPreserved(server: ReferenceServer): Promise<CheckResult> {
   const name = 'server: Conversation.pinnedAgentVersion matches its current Session.pinnedAgentVersion';
-  const caller = callerContextFactory();
+  const actor = authenticatedActorFactory(server);
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-  await server.publish(definition.id, caller);
-  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  await server.publish(definition.id, actor);
+  const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
   if (!conversationResult.ok) return failed(name, conversationResult.error.message);
 
   const session = server.getSession(conversationResult.value.currentSessionId);
@@ -42,14 +42,14 @@ async function checkVersionPinningPreserved(server: ReferenceServer): Promise<Ch
  */
 async function checkResourceTypeDiscriminator(server: ReferenceServer): Promise<CheckResult> {
   const name = 'server: every resource response carries a resourceType equal to its own resource name';
-  const caller = callerContextFactory();
+  const actor = authenticatedActorFactory(server);
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
   if (definition.resourceType !== 'AgentDefinition') {
     return failed(name, `AgentDefinition.resourceType was ${JSON.stringify(definition.resourceType)}, expected "AgentDefinition"`);
   }
 
-  await server.publish(definition.id, caller);
-  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  await server.publish(definition.id, actor);
+  const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
   if (!conversationResult.ok) return failed(name, conversationResult.error.message);
   if (conversationResult.value.resourceType !== 'Conversation') {
     return failed(name, `Conversation.resourceType was ${JSON.stringify(conversationResult.value.resourceType)}, expected "Conversation"`);
@@ -73,22 +73,22 @@ async function checkResourceTypeDiscriminator(server: ReferenceServer): Promise<
  */
 async function checkLineageAppendOnlyOldestFirst(server: ReferenceServer): Promise<CheckResult> {
   const name = 'server: migrate appends to previousSessionIds, oldest-first, across repeated migrations (never reordered)';
-  const caller = callerContextFactory();
+  const actor = authenticatedActorFactory(server);
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-  await server.publish(definition.id, caller);
-  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  await server.publish(definition.id, actor);
+  const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
   if (!conversationResult.ok) return failed(name, conversationResult.error.message);
   const originalSessionId = conversationResult.value.currentSessionId;
 
   await server.editAgentDefinitionDraft(definition.id);
-  await server.publish(definition.id, caller);
-  const first = await server.migrate(conversationResult.value.id, caller);
+  await server.publish(definition.id, actor);
+  const first = await server.migrate(conversationResult.value.id, actor);
   if (!first.ok) return failed(name, first.error.message);
   const secondSessionId = first.value.currentSessionId;
 
   await server.editAgentDefinitionDraft(definition.id);
-  await server.publish(definition.id, caller);
-  const second = await server.migrate(conversationResult.value.id, caller);
+  await server.publish(definition.id, actor);
+  const second = await server.migrate(conversationResult.value.id, actor);
   if (!second.ok) return failed(name, second.error.message);
 
   const expected = [originalSessionId, secondSessionId];
@@ -110,28 +110,28 @@ async function checkLineageAppendOnlyOldestFirst(server: ReferenceServer): Promi
  */
 async function checkMigrateNonCompounding(server: ReferenceServer): Promise<CheckResult> {
   const name = 'server: migrate is non-compounding across repeated calls with no intervening genuine turns (measured via the true stored history, not stream — which halts at idle)';
-  const caller = callerContextFactory();
+  const actor = authenticatedActorFactory(server);
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-  await server.publish(definition.id, caller);
-  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  await server.publish(definition.id, actor);
+  const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
   if (!conversationResult.ok) return failed(name, conversationResult.error.message);
-  await server.send(conversationResult.value.currentSessionId, 'hello', caller);
+  await server.send(conversationResult.value.currentSessionId, 'hello', actor);
 
   await server.editAgentDefinitionDraft(definition.id);
-  await server.publish(definition.id, caller);
-  const first = await server.migrate(conversationResult.value.id, caller);
+  await server.publish(definition.id, actor);
+  const first = await server.migrate(conversationResult.value.id, actor);
   if (!first.ok) return failed(name, first.error.message);
   const firstCount = await countStoredEvents(server, first.value.currentSessionId);
 
   await server.editAgentDefinitionDraft(definition.id);
-  await server.publish(definition.id, caller);
-  const second = await server.migrate(conversationResult.value.id, caller);
+  await server.publish(definition.id, actor);
+  const second = await server.migrate(conversationResult.value.id, actor);
   if (!second.ok) return failed(name, second.error.message);
   const secondCount = await countStoredEvents(server, second.value.currentSessionId);
 
   await server.editAgentDefinitionDraft(definition.id);
-  await server.publish(definition.id, caller);
-  const third = await server.migrate(conversationResult.value.id, caller);
+  await server.publish(definition.id, actor);
+  const third = await server.migrate(conversationResult.value.id, actor);
   if (!third.ok) return failed(name, third.error.message);
   const thirdCount = await countStoredEvents(server, third.value.currentSessionId);
 
@@ -154,13 +154,13 @@ async function checkMigrateNonCompounding(server: ReferenceServer): Promise<Chec
  */
 async function checkDrainResolvesPendingToolCalls(server: ReferenceServer, controls: MockProviderControls): Promise<CheckResult> {
   const name = 'server: drain enumerates and resolves pending tool calls, returning the session to idle — and never reports success while the session remains running';
-  const caller = callerContextFactory();
+  const actor = authenticatedActorFactory(server);
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
   const sessionResult = await server.createBuilderSession(definition.id);
   if (!sessionResult.ok) return failed(name, sessionResult.error.message);
-  await server.send(sessionResult.value.id, `${mockSentinels.toolUsePrefix}lookup`, caller);
+  await server.send(sessionResult.value.id, `${mockSentinels.toolUsePrefix}lookup`, actor);
 
-  const drainResult = await server.drain(sessionResult.value.id, caller);
+  const drainResult = await server.drain(sessionResult.value.id, actor);
   if (!drainResult.ok) return failed(name, drainResult.error.message);
   if (drainResult.value.status !== 'idle' || drainResult.value.resolvedToolUseIds.length === 0) {
     return failed(name, `expected idle with resolved tool uses, got ${JSON.stringify(drainResult.value)}`);
@@ -169,9 +169,9 @@ async function checkDrainResolvesPendingToolCalls(server: ReferenceServer, contr
   controls.forceNextSessionToStayRunningAfterDrain();
   const stillRunningSession = await server.createBuilderSession(definition.id);
   if (!stillRunningSession.ok) return failed(name, stillRunningSession.error.message);
-  await server.send(stillRunningSession.value.id, `${mockSentinels.toolUsePrefix}lookup`, caller);
+  await server.send(stillRunningSession.value.id, `${mockSentinels.toolUsePrefix}lookup`, actor);
 
-  const stillRunningDrain = await server.drain(stillRunningSession.value.id, caller);
+  const stillRunningDrain = await server.drain(stillRunningSession.value.id, actor);
   return !stillRunningDrain.ok
     ? passed(name)
     : failed(name, `expected drain to fail for a session that remains running after its pending calls are posted, got ${JSON.stringify(stillRunningDrain)}`);
@@ -200,14 +200,14 @@ async function checkDrainResolvesPendingToolCalls(server: ReferenceServer, contr
  */
 async function checkDrainRejectsUnauthorizedToolCalls(server: ReferenceServer, controls: MockProviderControls): Promise<CheckResult> {
   const name = "server: drain rejects a pending tool call not authorized by the pinned AgentDefinition (unlisted tool, wrong MCP server origin, or toolAllowlist exclusion), before any dispatch — and still drains a granted MCP call and, via the builtin-toolset carve-out, any unattributed call";
-  const caller = callerContextFactory();
+  const actor = authenticatedActorFactory(server);
 
   // (a) Entirely unlisted: nothing granted at all.
   const bareDefinition = await server.createAgentDefinition(agentDefinitionInputFactory({ tools: [] }));
   controls.queuePendingToolCallForNextSession({ toolUseId: 'tooluse_unlisted', name: 'delete_everything', input: {} });
   const unlistedSession = await server.createBuilderSession(bareDefinition.id);
   if (!unlistedSession.ok) return failed(name, unlistedSession.error.message);
-  const unlistedDrain = await server.drain(unlistedSession.value.id, caller);
+  const unlistedDrain = await server.drain(unlistedSession.value.id, actor);
   if (unlistedDrain.ok) return failed(name, 'expected rejection of an entirely unlisted tool call, drain reported success');
 
   const mcpDefinition = await server.createAgentDefinition(
@@ -234,7 +234,7 @@ async function checkDrainRejectsUnauthorizedToolCalls(server: ReferenceServer, c
   });
   const wrongServerSession = await server.createBuilderSession(mcpDefinition.id);
   if (!wrongServerSession.ok) return failed(name, wrongServerSession.error.message);
-  const wrongServerDrain = await server.drain(wrongServerSession.value.id, caller);
+  const wrongServerDrain = await server.drain(wrongServerSession.value.id, actor);
   if (wrongServerDrain.ok) return failed(name, 'expected rejection of a call from an ungranted MCP server, drain reported success');
 
   // (c) MCP call to the granted server, but excluded by its toolAllowlist.
@@ -246,7 +246,7 @@ async function checkDrainRejectsUnauthorizedToolCalls(server: ReferenceServer, c
   });
   const excludedSession = await server.createBuilderSession(mcpDefinition.id);
   if (!excludedSession.ok) return failed(name, excludedSession.error.message);
-  const excludedDrain = await server.drain(excludedSession.value.id, caller);
+  const excludedDrain = await server.drain(excludedSession.value.id, actor);
   if (excludedDrain.ok) return failed(name, 'expected rejection of a toolAllowlist-excluded call, drain reported success');
 
   // (d) Baseline: a genuinely granted MCP call still drains to idle.
@@ -258,7 +258,7 @@ async function checkDrainRejectsUnauthorizedToolCalls(server: ReferenceServer, c
   });
   const grantedSession = await server.createBuilderSession(mcpDefinition.id);
   if (!grantedSession.ok) return failed(name, grantedSession.error.message);
-  const grantedDrain = await server.drain(grantedSession.value.id, caller);
+  const grantedDrain = await server.drain(grantedSession.value.id, actor);
   if (!grantedDrain.ok) return failed(name, `expected a genuinely granted tool call to still drain successfully, got: ${grantedDrain.error.message}`);
   if (grantedDrain.value.status !== 'idle') return failed(name, `expected idle, got ${JSON.stringify(grantedDrain.value)}`);
 
@@ -275,7 +275,7 @@ async function checkDrainRejectsUnauthorizedToolCalls(server: ReferenceServer, c
   controls.queuePendingToolCallForNextSession({ toolUseId: 'tooluse_builtin', name: 'delete_everything', input: {} });
   const builtinSession = await server.createBuilderSession(builtinDefinition.id);
   if (!builtinSession.ok) return failed(name, builtinSession.error.message);
-  const builtinDrain = await server.drain(builtinSession.value.id, caller);
+  const builtinDrain = await server.drain(builtinSession.value.id, actor);
   if (!builtinDrain.ok) {
     return failed(name, `expected the builtin-toolset carve-out to authorize an unattributed call, got: ${builtinDrain.error.message}`);
   }
@@ -306,24 +306,24 @@ async function checkDrainRejectsUnauthorizedToolCalls(server: ReferenceServer, c
  */
 async function checkDrainVersionIsolation(server: ReferenceServer): Promise<CheckResult> {
   const name = "server: drain authorizes against the pinned version's own snapshotted grants — an unpublished draft edit revoking them cannot affect a session pinned to the published version";
-  const caller = callerContextFactory();
+  const actor = authenticatedActorFactory(server);
   const definition = await server.createAgentDefinition(
     agentDefinitionInputFactory({ tools: [{ type: 'custom', name: 'resume', description: 'Resumes a prior task.', inputSchema: {} }] }),
   );
-  await server.publish(definition.id, caller);
-  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  await server.publish(definition.id, actor);
+  const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
   if (!conversationResult.ok) return failed(name, conversationResult.error.message);
   const sessionId = conversationResult.value.currentSessionId;
 
   // Park the v1-pinned session on a pending call for the tool v1 grants.
-  await server.send(sessionId, `${mockSentinels.toolUsePrefix}resume`, caller);
+  await server.send(sessionId, `${mockSentinels.toolUsePrefix}resume`, actor);
 
   // Revoke every grant on the draft (v2) — deliberately NOT published: the
   // Conversation/Session above remain pinned to published v1.
   const edited = await server.editAgentDefinitionDraft(definition.id, { tools: [] });
   if (!edited.ok) return failed(name, edited.error.message);
 
-  const drained = await server.drain(sessionId, caller);
+  const drained = await server.drain(sessionId, actor);
   if (!drained.ok) {
     return failed(
       name,
@@ -349,15 +349,15 @@ async function checkDrainVersionIsolation(server: ReferenceServer): Promise<Chec
  */
 async function checkMigrateVersionIsolation(server: ReferenceServer): Promise<CheckResult> {
   const name = "server: migrate re-resolves vaultIds from the TARGET version's snapshotted grants — never from a later unpublished draft's live content";
-  const caller = callerContextFactory();
+  const actor = authenticatedActorFactory(server);
   const definition = await server.createAgentDefinition(
     agentDefinitionInputFactory({
       tools: [{ type: 'mcp', serverUrl: 'https://mcp.example.com/isolation-v1', label: 'V1', auth: 'credential', permissionPolicy: 'always_allow' }],
     }),
   );
   server.registerCredential(registerCredentialInputFactory({ mcpServerUrl: 'https://mcp.example.com/isolation-v1' }));
-  await server.publish(definition.id, caller);
-  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  await server.publish(definition.id, actor);
+  const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
   if (!conversationResult.ok) return failed(name, conversationResult.error.message);
 
   // v2 — the published migrate target: a disjoint grant/credential.
@@ -366,7 +366,7 @@ async function checkMigrateVersionIsolation(server: ReferenceServer): Promise<Ch
     tools: [{ type: 'mcp', serverUrl: 'https://mcp.example.com/isolation-v2', label: 'V2', auth: 'credential', permissionPolicy: 'always_allow' }],
   });
   if (!v2.ok) return failed(name, v2.error.message);
-  await server.publish(definition.id, caller);
+  await server.publish(definition.id, actor);
 
   // v3 — drafted but never published: a third disjoint grant/credential the
   // LIVE AgentDefinition carries while the migrate target remains v2.
@@ -376,7 +376,7 @@ async function checkMigrateVersionIsolation(server: ReferenceServer): Promise<Ch
   });
   if (!v3.ok) return failed(name, v3.error.message);
 
-  const migrated = await server.migrate(conversationResult.value.id, caller);
+  const migrated = await server.migrate(conversationResult.value.id, actor);
   if (!migrated.ok) return failed(name, migrated.error.message);
 
   const newSession = server.getSession(migrated.value.currentSessionId);
@@ -391,19 +391,19 @@ async function checkMigrateVersionIsolation(server: ReferenceServer): Promise<Ch
 
 async function checkSendRejectsSupersededSession(server: ReferenceServer): Promise<CheckResult> {
   const name = 'server: send rejects a session superseded by migrate';
-  const caller = callerContextFactory();
+  const actor = authenticatedActorFactory(server);
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-  await server.publish(definition.id, caller);
-  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  await server.publish(definition.id, actor);
+  const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
   if (!conversationResult.ok) return failed(name, conversationResult.error.message);
   const originalSessionId = conversationResult.value.currentSessionId;
 
   await server.editAgentDefinitionDraft(definition.id);
-  await server.publish(definition.id, caller);
-  const migrated = await server.migrate(conversationResult.value.id, caller);
+  await server.publish(definition.id, actor);
+  const migrated = await server.migrate(conversationResult.value.id, actor);
   if (!migrated.ok) return failed(name, migrated.error.message);
 
-  const rejected = await server.send(originalSessionId, 'hello', caller);
+  const rejected = await server.send(originalSessionId, 'hello', actor);
   return !rejected.ok && rejected.error.code === 'Server.SessionNotCurrent'
     ? passed(name)
     : failed(name, `expected Server.SessionNotCurrent, got ${JSON.stringify(rejected)}`);
@@ -426,18 +426,18 @@ async function checkSendRejectsSupersededSession(server: ReferenceServer): Promi
  */
 async function checkDegradesToFreshStartOnTranscriptFetchFailure(server: ReferenceServer, controls: MockProviderControls): Promise<CheckResult> {
   const name = 'server: migrate degrades to an empty (fresh-start) seed, rather than failing, when the outgoing transcript fetch fails, and flags the AuditEvent degraded';
-  const caller = callerContextFactory();
+  const actor = authenticatedActorFactory(server);
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-  await server.publish(definition.id, caller);
-  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  await server.publish(definition.id, actor);
+  const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
   if (!conversationResult.ok) return failed(name, conversationResult.error.message);
-  await server.send(conversationResult.value.currentSessionId, 'hello', caller);
+  await server.send(conversationResult.value.currentSessionId, 'hello', actor);
 
   controls.induceTranscriptFetchFailureOnce(conversationResult.value.currentSessionId);
 
   await server.editAgentDefinitionDraft(definition.id);
-  await server.publish(definition.id, caller);
-  const migrated = await server.migrate(conversationResult.value.id, caller);
+  await server.publish(definition.id, actor);
+  const migrated = await server.migrate(conversationResult.value.id, actor);
   if (!migrated.ok) return failed(name, `migrate MUST NOT fail on a transcript-fetch failure, but got: ${migrated.error.message}`);
 
   const seeded = await server.listSessionEvents(migrated.value.currentSessionId);
@@ -466,16 +466,16 @@ async function checkDegradesToFreshStartOnTranscriptFetchFailure(server: Referen
  */
 async function checkNormalMigrateNotFlaggedDegraded(server: ReferenceServer): Promise<CheckResult> {
   const name = 'server: a normal, full-seed migrate is NOT flagged degraded in its AuditEvent';
-  const caller = callerContextFactory();
+  const actor = authenticatedActorFactory(server);
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-  await server.publish(definition.id, caller);
-  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  await server.publish(definition.id, actor);
+  const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
   if (!conversationResult.ok) return failed(name, conversationResult.error.message);
-  await server.send(conversationResult.value.currentSessionId, 'hello', caller);
+  await server.send(conversationResult.value.currentSessionId, 'hello', actor);
 
   await server.editAgentDefinitionDraft(definition.id);
-  await server.publish(definition.id, caller);
-  const migrated = await server.migrate(conversationResult.value.id, caller);
+  await server.publish(definition.id, actor);
+  const migrated = await server.migrate(conversationResult.value.id, actor);
   if (!migrated.ok) return failed(name, migrated.error.message);
 
   const migrateEvent = server
@@ -499,15 +499,15 @@ async function checkNormalMigrateNotFlaggedDegraded(server: ReferenceServer): Pr
  */
 async function checkPublishDoesNotDisturbLiveConversations(server: ReferenceServer): Promise<CheckResult> {
   const name = 'server: publish does not disturb a live Conversation pinned to a different version (no cascade into migrate)';
-  const caller = callerContextFactory();
+  const actor = authenticatedActorFactory(server);
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-  await server.publish(definition.id, caller);
-  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  await server.publish(definition.id, actor);
+  const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
   if (!conversationResult.ok) return failed(name, conversationResult.error.message);
   const before = conversationResult.value;
 
   await server.editAgentDefinitionDraft(definition.id);
-  await server.publish(definition.id, caller);
+  await server.publish(definition.id, actor);
 
   const after = server.getConversation(before.id);
   const sessionAfter = server.getSession(before.currentSessionId);
@@ -531,16 +531,16 @@ async function checkPublishDoesNotDisturbLiveConversations(server: ReferenceServ
  */
 async function checkMigrateReattachesResources(server: ReferenceServer): Promise<CheckResult> {
   const name = 'server: migrate Stage 1 re-attaches the outgoing session\'s resources onto the newly minted session (never dropped or reduced)';
-  const caller = callerContextFactory();
+  const actor = authenticatedActorFactory(server);
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-  await server.publish(definition.id, caller);
+  await server.publish(definition.id, actor);
   const resources = [{ type: 'file' as const, fileId: 'file_check' }];
-  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id, { resources }));
+  const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id, { resources }));
   if (!conversationResult.ok) return failed(name, conversationResult.error.message);
 
   await server.editAgentDefinitionDraft(definition.id);
-  await server.publish(definition.id, caller);
-  const migrated = await server.migrate(conversationResult.value.id, caller);
+  await server.publish(definition.id, actor);
+  const migrated = await server.migrate(conversationResult.value.id, actor);
   if (!migrated.ok) return failed(name, migrated.error.message);
 
   const newSession = server.getSession(migrated.value.currentSessionId);
@@ -568,10 +568,113 @@ async function checkCreateConversationRejectsNeverPublishedDefinition(server: Re
   const name = 'server: creating a real Conversation against a never-published AgentDefinition is rejected, never silently pinned to draftVersion';
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
   // Deliberately never published.
-  const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+  const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
   return !conversationResult.ok
     ? passed(name)
     : failed(name, `expected rejection for a never-published definition, got a Conversation pinned to v${conversationResult.value.pinnedAgentVersion.version}`);
+}
+
+/**
+ * Issue #7 Tranche A: a write against a scope the actor is NOT a member
+ * of MUST be rejected (`Server.Unauthorized`), and — as load-bearing as
+ * the rejection itself — MUST NOT leave a `success`-outcome `AuditEvent`
+ * behind for that call. Drives `send` (representative of the six
+ * write interactions, all of which share `auth/authorize.ts`) with an
+ * actor whose `scopeMemberships` names a scope other than the target
+ * Session's resolved scope.
+ */
+async function checkWriteRejectsOutOfScopeActor(server: ReferenceServer): Promise<CheckResult> {
+  const name = 'server: a write against a scope the actor is not a member of is rejected (Server.Unauthorized), with no success AuditEvent left behind';
+  const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
+  await server.publish(definition.id, authenticatedActorFactory(server));
+  const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
+  if (!conversationResult.ok) return failed(name, conversationResult.error.message);
+  const sessionId = conversationResult.value.currentSessionId;
+
+  const outOfScopeActor = authenticatedActorFactory(server, {
+    registerInput: { scopeMemberships: [{ level: 'workspace', id: 'a_scope_this_actor_does_not_belong_to' }] },
+  });
+  const result = await server.send(sessionId, 'hello from an out-of-scope actor', outOfScopeActor);
+  if (result.ok) return failed(name, 'expected rejection, got success');
+  if (result.error.code !== 'Server.Unauthorized') return failed(name, `expected Server.Unauthorized, got ${result.error.code}`);
+
+  // Filtered to THIS check's own sessionId — `runServerChecks` runs every
+  // check concurrently against one shared server/audit log, so an
+  // unfiltered "any success send event anywhere" scan would false-fail on
+  // a sibling check's own, unrelated, legitimately successful `send`.
+  const successEvent = server.listAuditEvents().find((e) => e.what === 'send' && e.outcome === 'success' && e.refs.sessionId === sessionId);
+  return successEvent ? failed(name, `expected no success AuditEvent for this session, got ${JSON.stringify(successEvent)}`) : passed(name);
+}
+
+/**
+ * Companion to {@link checkWriteRejectsOutOfScopeActor} for
+ * `createConversation`: `input.scope` is the actor's OWN scope
+ * assertion (there is no pre-existing resource to derive it from), so
+ * this must be checked the same way — an actor with no standing in the
+ * asserted scope is rejected, never silently given a Conversation
+ * pinned to a scope it does not belong to.
+ */
+async function checkCreateConversationRejectsOutOfScopeActor(server: ReferenceServer): Promise<CheckResult> {
+  const name = "server: createConversation with a scope outside the actor's scopeMemberships is rejected (Server.Unauthorized)";
+  const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
+  await server.publish(definition.id, authenticatedActorFactory(server));
+  const outOfScopeActor = authenticatedActorFactory(server, {
+    registerInput: { scopeMemberships: [{ level: 'workspace', id: 'a_scope_this_actor_does_not_belong_to' }] },
+  });
+
+  const result = await server.createConversation(createConversationInputFactory(server, definition.id, { actor: outOfScopeActor }));
+  if (result.ok) return failed(name, `expected rejection, got a Conversation ${result.value.id}`);
+  return result.error.code === 'Server.Unauthorized' ? passed(name) : failed(name, `expected Server.Unauthorized, got ${result.error.code}`);
+}
+
+/**
+ * The containment rule's load-bearing case
+ * (`docs/spec/scope-and-identity.md` § On-behalf-of and scope-pinning):
+ * a delegated actor's authorized reach is its `scopePin`, period — never
+ * the union of the pin with either party's `scopeMemberships`. Registers
+ * a principal whose `scopeMemberships` genuinely include the TARGET
+ * `AgentDefinition`'s scope (so if `authorize()` incorrectly fell back to
+ * consulting memberships when delegated, this call would wrongly
+ * succeed), then authenticates it with a delegation whose `scopePin` is
+ * a DIFFERENT scope. `publish` against the Definition's actual scope
+ * MUST still be rejected.
+ */
+async function checkDelegatedActorCannotExceedScopePin(server: ReferenceServer): Promise<CheckResult> {
+  const name = "server: a delegated actor's write is rejected when the target scope differs from its scopePin, even though the acting principal is separately a member of that scope (containment rule)";
+  const targetScope = { level: 'workspace' as const, id: 'workspace_delegation_target' };
+  const definition = await server.createAgentDefinition(agentDefinitionInputFactory({ scope: targetScope }));
+
+  const actingPrincipal = server.registerPrincipal({
+    kind: 'service',
+    subject: 'service_delegate',
+    // Deliberately a genuine member of targetScope — proves rejection below
+    // comes from the containment rule, not merely "no membership anywhere".
+    scopeMemberships: [targetScope],
+    roles: [],
+  });
+  const onBehalfOfPrincipal = server.registerPrincipal({ kind: 'user', subject: 'delegating_member', scopeMemberships: [], roles: [] });
+  const scopePin = { level: 'workspace' as const, id: 'workspace_delegation_pin_a_different_scope' };
+  const authenticated = server.authenticate({
+    principalId: actingPrincipal.id,
+    delegation: { onBehalfOfPrincipalId: onBehalfOfPrincipal.id, scopePin },
+  });
+  if (!authenticated.ok) return failed(name, authenticated.error.message);
+
+  const result = await server.publish(definition.id, authenticated.value);
+  if (result.ok) return failed(name, "expected rejection — the delegated actor's scopePin does not equal the target scope, regardless of its own memberships");
+  return result.error.code === 'Server.Unauthorized' ? passed(name) : failed(name, `expected Server.Unauthorized, got ${result.error.code}`);
+}
+
+/**
+ * The trust boundary itself: `authenticate()` MUST fail closed for a
+ * `principalId` naming no registered `Principal` — there is no way to
+ * mint an `AuthenticatedActor` for a party the server has no record of.
+ */
+async function checkAuthenticationFailsForUnregisteredPrincipal(server: ReferenceServer): Promise<CheckResult> {
+  const name = 'server: authenticate() fails closed (Server.AuthenticationFailed) for an unregistered principalId';
+  const result = server.authenticate({ principalId: 'principal_never_registered' });
+  if (result.ok) return failed(name, 'expected authentication failure, got a minted AuthenticatedActor');
+  return result.error.code === 'Server.AuthenticationFailed' ? passed(name) : failed(name, `expected Server.AuthenticationFailed, got ${result.error.code}`);
 }
 
 /**
@@ -589,10 +692,16 @@ async function checkCreateConversationRejectsNeverPublishedDefinition(server: Re
  * degrade-to-fresh-start on transcript fetch failure (and that
  * degradation being flagged, and ONLY flagged, on the actually-degraded
  * migrate — issue #12), publish not disturbing live conversations,
- * migrate's resource re-attachment, and never-published target-version
- * handling. This is the "Server" conformance level's executable check —
- * see `verify-self-report.ts` for how a server's `selfReport()` claim
- * of `'server'` is checked against this.
+ * migrate's resource re-attachment, never-published target-version
+ * handling, and — issue #7 Tranche A — the authenticated-actor trust
+ * boundary and write-path authorization: a write or `createConversation`
+ * against a scope the actor is not a member of is rejected with no
+ * success `AuditEvent` left behind, a delegated actor cannot exceed its
+ * `scopePin` even when separately a member of the target scope
+ * (containment rule), and `authenticate()` fails closed for an
+ * unregistered `principalId`. This is the "Server" conformance level's
+ * executable check — see `verify-self-report.ts` for how a server's
+ * `selfReport()` claim of `'server'` is checked against this.
  *
  * `controls` is the mock provider's test-only control surface (see
  * `mock/mock-provider-controls.types.ts`) — required here (not
@@ -615,5 +724,9 @@ export async function runServerChecks(server: ReferenceServer, controls: MockPro
     checkPublishDoesNotDisturbLiveConversations(server),
     checkMigrateReattachesResources(server),
     checkCreateConversationRejectsNeverPublishedDefinition(server),
+    checkWriteRejectsOutOfScopeActor(server),
+    checkCreateConversationRejectsOutOfScopeActor(server),
+    checkDelegatedActorCannotExceedScopePin(server),
+    checkAuthenticationFailsForUnregisteredPrincipal(server),
   ]);
 }

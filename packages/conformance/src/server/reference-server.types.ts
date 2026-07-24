@@ -1,13 +1,15 @@
-import type { AgentDefinition, AgentDefinitionContent, AgentDefinitionVersion, AgentVersionRef, AuditEvent, Conversation, Credential, Event, Session } from '@oasp/schemas';
+import type { AgentDefinition, AgentDefinitionContent, AgentDefinitionVersion, AgentVersionRef, AuditEvent, Conversation, Credential, Event, Principal, Session } from '@oasp/schemas';
 import type { ListSessionEventsOptions, ListSessionEventsResult } from '../adapter/list-session-events.types';
 import type { ConformanceSelfReport } from '../conformance/self-report.types';
 import type { DomainError } from '../shared/domain-error.types';
 import type { Result } from '../shared/result';
-import type { CallerContext } from './caller-context.types';
+import type { AuthenticateInput } from './auth/authenticate-input.types';
+import type { AuthenticatedActor } from './auth/authenticated-actor.types';
 import type { DrainOutcome } from './interactions/drain.types';
 import type { CreateAgentDefinitionInput } from './setup/create-agent-definition-input.types';
 import type { CreateConversationInput } from './setup/create-conversation-input.types';
 import type { RegisterCredentialInput } from './setup/register-credential-input.types';
+import type { RegisterPrincipalInput } from './setup/register-principal-input.types';
 
 /**
  * A minimal, conformant OASP v0 Server implementation, backed by an
@@ -15,11 +17,11 @@ import type { RegisterCredentialInput } from './setup/register-credential-input.
  * Everything in this interface splits into two groups:
  *
  * 1. **Setup helpers** (`createAgentDefinition`, `registerCredential`,
- *    `createBuilderSession`, `createTestSession`,
+ *    `registerPrincipal`, `createBuilderSession`, `createTestSession`,
  *    `editAgentDefinitionDraft`) — not part of the seven audited
  *    interactions; they exist so a test can build a scenario (an
- *    AgentDefinition, a registered Credential) to then drive the seven
- *    interactions against. `createBuilderSession` / `createTestSession`
+ *    AgentDefinition, a registered Credential, a registered Principal)
+ *    to then drive the seven interactions against. `createBuilderSession` / `createTestSession`
  *    deliberately stay unaudited setup helpers even after S4: neither
  *    mints a durable `Conversation` (see
  *    `docs/spec/conversation-and-session.md`), both are dev-time
@@ -51,10 +53,26 @@ import type { RegisterCredentialInput } from './setup/register-credential-input.
  * Every method that resolves a `Result` uses the house error pattern:
  * a `DomainError` on the failure branch, never a thrown exception for
  * an expected failure.
+ *
+ * **Authenticated-actor trust boundary (issue #7 Tranche A):** the six
+ * write interactions below, plus `createConversation`, take an
+ * `AuthenticatedActor` — never the pre-Tranche-A `CallerContext`, a bare
+ * `{principal, onBehalfOf?}` the caller simply asserted in the request
+ * body. `authenticate()` is the ONLY way to mint one, and it only ever
+ * resolves a `principalId` against `ServerState.principals`
+ * (`registerPrincipal`'s store) — see `auth/authenticate.ts` and
+ * `auth/authenticated-actor.types.ts`. Each of those interactions then
+ * calls `auth/authorize.ts` against its resolved resource's `scope`
+ * before any side effect. Tranche B covers the equivalent containment
+ * proof for the read accessors (group 3 below) — out of scope here.
  */
 export interface ReferenceServer {
   createAgentDefinition(input: CreateAgentDefinitionInput): Promise<AgentDefinition>;
   registerCredential(input: RegisterCredentialInput): Credential;
+  /** Registers a full `Principal` resource — the only store `authenticate()` resolves a `principalId` against. See `setup/register-principal.ts`. */
+  registerPrincipal(input: RegisterPrincipalInput): Principal;
+  /** The authentication seam — mints an `AuthenticatedActor` from a registered `Principal`, never from caller-supplied claims. See `auth/authenticate.ts`. */
+  authenticate(input: AuthenticateInput): Result<AuthenticatedActor, DomainError>;
   createBuilderSession(agentDefinitionId: string, resources?: Session['resources']): Promise<Result<Session, DomainError>>;
   createTestSession(agentDefinitionId: string, resources?: Session['resources']): Promise<Result<Session, DomainError>>;
   /**
@@ -72,14 +90,14 @@ export interface ReferenceServer {
     contentOverrides?: Partial<AgentDefinitionContent>,
   ): Promise<Result<AgentDefinition, DomainError>>;
 
-  publish(definitionId: string, caller: CallerContext): Promise<Result<AgentDefinition, DomainError>>;
-  /** `docs/spec/interactions.md` § `createConversation`. Mints the first Session for a brand-new Conversation; the emitted AuditEvent's `who.principal` comes from `input.initiatingPrincipal` (see `setup/create-conversation.ts`), not a separate `CallerContext` — there is no `onBehalfOf` support on this interaction. */
+  publish(definitionId: string, actor: AuthenticatedActor): Promise<Result<AgentDefinition, DomainError>>;
+  /** `docs/spec/interactions.md` § `createConversation`. Mints the first Session for a brand-new Conversation; the emitted AuditEvent's `who` comes from `input.actor` (see `setup/create-conversation.ts`), never from caller-supplied identity claims. `input.scope` MUST be authorized against `input.actor` (and against the target AgentDefinition's own scope) before a Conversation is created for it. */
   createConversation(input: CreateConversationInput): Promise<Result<Conversation, DomainError>>;
-  migrate(conversationId: string, caller: CallerContext): Promise<Result<Conversation, DomainError>>;
-  drain(sessionId: string, caller: CallerContext): Promise<Result<DrainOutcome, DomainError>>;
-  stream(sessionId: string, caller: CallerContext): Promise<Result<AsyncIterable<Event>, DomainError>>;
-  send(sessionId: string, content: string, caller: CallerContext): Promise<Result<void, DomainError>>;
-  sendToolResult(sessionId: string, toolUseId: string, result: unknown, caller: CallerContext): Promise<Result<void, DomainError>>;
+  migrate(conversationId: string, actor: AuthenticatedActor): Promise<Result<Conversation, DomainError>>;
+  drain(sessionId: string, actor: AuthenticatedActor): Promise<Result<DrainOutcome, DomainError>>;
+  stream(sessionId: string, actor: AuthenticatedActor): Promise<Result<AsyncIterable<Event>, DomainError>>;
+  send(sessionId: string, content: string, actor: AuthenticatedActor): Promise<Result<void, DomainError>>;
+  sendToolResult(sessionId: string, toolUseId: string, result: unknown, actor: AuthenticatedActor): Promise<Result<void, DomainError>>;
 
   getAgentDefinition(id: string): AgentDefinition | undefined;
   /** Reads the immutable content snapshot `ref` pins (issue #10) — `undefined` only if `ref` names a version number that was never minted through this server. */

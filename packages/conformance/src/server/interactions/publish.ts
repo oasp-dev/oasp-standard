@@ -2,9 +2,10 @@ import type { AgentDefinition } from '@oasp/schemas';
 import type { Clock } from '../../shared/clock.types';
 import type { DomainError } from '../../shared/domain-error.types';
 import { err, ok, type Result } from '../../shared/result';
+import type { AuthenticatedActor } from '../auth/authenticated-actor.types';
+import { authorize } from '../auth/authorize';
 import { buildAuditWho } from '../audit/build-audit-who';
 import { emitAuditEvent } from '../audit/emit-audit-event';
-import type { CallerContext } from '../caller-context.types';
 import { serverErrors } from '../server-errors';
 import { getAgentDefinitionVersion } from '../store/agent-definition-version-store';
 import type { ServerState } from '../store/server-state';
@@ -17,6 +18,12 @@ import type { ServerState } from '../store/server-state';
  * intervening draft edit is a no-op (still emits an audit event, since
  * the required-emission set is "every invocation," not "every
  * mutating invocation").
+ *
+ * **Issue #7 Tranche A:** takes a server-minted `AuthenticatedActor`,
+ * never a caller-asserted `CallerContext`, and authorizes it against
+ * `definition.scope` (`auth/authorize.ts`) before the invariant
+ * assertion or the mutation below — an unauthorized caller's failure is
+ * audited (`outcome: 'failure'`) exactly like any other rejected write.
  *
  * **Content-freezing (issue #10):** `publish` deliberately does NOT
  * itself freeze `draftVersion`'s content into an `AgentDefinitionVersion`
@@ -49,12 +56,22 @@ export async function publishInteraction(
   state: ServerState,
   clock: Clock,
   definitionId: string,
-  caller: CallerContext,
+  actor: AuthenticatedActor,
 ): Promise<Result<AgentDefinition, DomainError>> {
   const definition = state.agentDefinitions.get(definitionId);
   if (!definition) {
-    emitAuditEvent(state, clock, { who: buildAuditWho(caller), what: 'publish', outcome: 'not_found', refs: { definitionId } });
+    emitAuditEvent(state, clock, { who: buildAuditWho(state, actor), what: 'publish', outcome: 'not_found', refs: { definitionId } });
     return err(serverErrors.definitionNotFound(definitionId));
+  }
+
+  // Issue #7 Tranche A: authorize before any side effect (and before the
+  // invariant assertion below, which is a reference-server bug condition,
+  // not a legitimate outcome an unauthorized caller should be able to probe
+  // for).
+  const authorization = authorize(actor, definition.scope);
+  if (!authorization.ok) {
+    emitAuditEvent(state, clock, { who: buildAuditWho(state, actor), what: 'publish', scope: definition.scope, outcome: 'failure', refs: { definitionId } });
+    return err(authorization.error);
   }
 
   if (!getAgentDefinitionVersion(state, { agentDefinitionId: definitionId, version: definition.draftVersion })) {
@@ -68,7 +85,7 @@ export async function publishInteraction(
   state.agentDefinitions.set(definitionId, updated);
 
   emitAuditEvent(state, clock, {
-    who: buildAuditWho(caller),
+    who: buildAuditWho(state, actor),
     what: 'publish',
     scope: updated.scope,
     outcome: 'success',

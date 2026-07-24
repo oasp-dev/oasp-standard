@@ -326,12 +326,13 @@ of one of the seven interactions:
   *would-be* `Conversation` was going to carry), so it remains
   populatable and **MUST** still be included on this outcome too.
 - `who` **MUST** still be populated exactly as it would be for any
-  other outcome of the same interaction (`buildAuditWho(caller)`, or —
-  for `createConversation` — `{ principal: input.initiatingPrincipal }`).
+  other outcome of the same interaction (`buildAuditWho(state, actor)`,
+  shared by all seven interactions including `createConversation` as of
+  [issue #7 Tranche A](./scope-and-identity.md#the-authenticated-actor-trust-boundary-issue-7-tranche-a)).
   Nothing about `who`'s availability depends on whether the target
-  resource resolved: the acting `CallerContext` (or, for
-  `createConversation`, the caller-supplied `initiatingPrincipal`) is
-  known from the request itself, before any resource lookup runs.
+  resource resolved: the server-minted `AuthenticatedActor` — never a
+  caller-asserted claim — is already known, from `authenticate()`,
+  before any resource lookup runs.
 
 | `what` | Not-found precondition | `refs` field populated |
 |---|---|---|

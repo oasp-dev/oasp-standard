@@ -3,7 +3,9 @@ import type { AgentProvider } from '../../adapter/agent-provider.types';
 import type { Clock } from '../../shared/clock.types';
 import { err, ok, type Result } from '../../shared/result';
 import type { DomainError } from '../../shared/domain-error.types';
+import { authorize } from '../auth/authorize';
 import { buildAuditEvidence } from '../audit/build-audit-evidence';
+import { buildAuditWho } from '../audit/build-audit-who';
 import { emitAuditEvent } from '../audit/emit-audit-event';
 import { resolveVaultIds } from '../credential/resolve-vault-ids';
 import { serverErrors } from '../server-errors';
@@ -23,21 +25,27 @@ import type { CreateConversationInput } from './create-conversation-input.types'
  * audited (`createConversation` and `migrate`) tracked as
  * v0-release-blocking before S4 ([issue #5](https://github.com/FieldstateNZ/oasp-standard/issues/5)).
  *
- * `who.principal` on the emitted `AuditEvent` is `input.initiatingPrincipal`
- * — the same value the resulting `Conversation.initiatingPrincipal`
- * carries. This is the natural read of "the Principal that performed
- * the interaction" for a *creating* interaction: the Principal starting
- * the Conversation and the Principal performing `createConversation`
- * are the same fact, stated once. The emitted `AuditEvent.who` *could*
- * in principle carry `onBehalfOf` — per `docs/spec/scope-and-identity.md`,
- * on-behalf-of is asserted per interaction in `AuditEvent.who`,
- * independent of what the `Conversation` resource itself carries — but
- * v0 does not model delegated conversation-creation: `createConversation`
- * has a single actor, the `initiatingPrincipal`, so `who` is emitted
- * self-only (no `onBehalfOf`), which reads unambiguously as "acted as
- * self". A follow-up could add an `onBehalfOf` to `CreateConversationInput`
- * to support delegated creation. Flagged as an interpretation call in
- * this slice's handback.
+ * **Issue #7 Tranche A — identity now comes from `input.actor`, never a
+ * bare caller claim:** `who` is built via `buildAuditWho(state, input.actor)`
+ * — the same helper every other audited interaction now uses — and the
+ * resulting `Conversation.initiatingPrincipal` is set to that same
+ * `who.principal`, so the two can never independently drift (the
+ * pre-Tranche-A version accepted a separate, caller-supplied
+ * `initiatingPrincipal` field, which was exactly the same
+ * request-body-assertion trust gap `CallerContext` had elsewhere).
+ * `input.actor` CAN carry a `delegation` (this interaction does support
+ * on-behalf-of, unlike the earlier revision's note below assumed): when
+ * it does, `who.onBehalfOf` is populated from
+ * `actor.delegation.onBehalfOf`, and `input.scope` is authorized against
+ * `actor.delegation.scopePin` (never against either party's
+ * `scopeMemberships`) — see `auth/authorize.ts`.
+ *
+ * Before that identity check, `input.scope` and the target
+ * `AgentDefinition`'s own `scope` are BOTH authorized against
+ * `input.actor` — see the two `authorize()` calls below. This is new
+ * write-path authorization Tranche A adds; previously `input.scope` was
+ * accepted and stamped onto the new `Conversation` with no check that
+ * the caller had any standing in it at all.
  *
  * **Interpretation, revised per the dev lead's sign-off:**
  * `docs/spec/target-version-resolution.md`'s table is scoped to what a
@@ -87,7 +95,24 @@ export async function createConversationSetup(
   clock: Clock,
   input: CreateConversationInput,
 ): Promise<Result<Conversation, DomainError>> {
-  const who = { principal: input.initiatingPrincipal };
+  const who = buildAuditWho(state, input.actor);
+
+  // Issue #7 Tranche A: `input.scope` is the actor's OWN scope selection
+  // (which scope this Conversation will attach to) and MUST be authorized
+  // against the actor before anything else — a caller asserting a scope it
+  // has no standing in is rejected here regardless of whether the target
+  // AgentDefinition even exists, so this runs before the definition lookup.
+  const scopeAuthorization = authorize(input.actor, input.scope);
+  if (!scopeAuthorization.ok) {
+    emitAuditEvent(state, clock, {
+      who,
+      what: 'createConversation',
+      scope: input.scope,
+      outcome: 'failure',
+      refs: { definitionId: input.agentDefinitionId },
+    });
+    return err(scopeAuthorization.error);
+  }
 
   const definition = state.agentDefinitions.get(input.agentDefinitionId);
   if (!definition) {
@@ -99,6 +124,19 @@ export async function createConversationSetup(
       refs: { definitionId: input.agentDefinitionId },
     });
     return err(serverErrors.definitionNotFound(input.agentDefinitionId));
+  }
+
+  // The actor must ALSO be authorized against the target AgentDefinition's
+  // own scope — a Conversation cannot be launched from a Definition the
+  // actor cannot otherwise reach, independent of whatever scope it asserted
+  // for the new Conversation itself (the two scopes may legitimately
+  // differ — e.g. a definition shared at `tenant` scope backing
+  // Conversations pinned at `workspace` scope — so both checks are
+  // required, neither substitutes for the other).
+  const definitionAuthorization = authorize(input.actor, definition.scope);
+  if (!definitionAuthorization.ok) {
+    emitAuditEvent(state, clock, { who, what: 'createConversation', scope: input.scope, outcome: 'failure', refs: { definitionId: definition.id } });
+    return err(definitionAuthorization.error);
   }
 
   const deployment = state.deployments.get(definition.id);
@@ -151,7 +189,7 @@ export async function createConversationSetup(
     resourceType: 'Conversation',
     id: conversationId,
     scope: input.scope,
-    initiatingPrincipal: input.initiatingPrincipal,
+    initiatingPrincipal: who.principal,
     currentSessionId: sessionResult.value.id,
     pinnedAgentVersion,
     previousSessionIds: [],

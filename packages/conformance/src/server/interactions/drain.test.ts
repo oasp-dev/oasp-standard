@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agentDefinitionInputFactory } from '../../factories/agent-definition-input-factory';
-import { callerContextFactory } from '../../factories/caller-context-factory';
+import { authenticatedActorFactory } from '../../factories/authenticated-actor-factory';
 import { createConversationInputFactory } from '../../factories/create-conversation-input-factory';
 import { testHarnessFactory } from '../../factories/test-harness-factory';
 import { createMockAgentProvider } from '../../mock/create-mock-agent-provider';
@@ -15,7 +15,7 @@ async function buildParkedSession() {
   const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
   const sessionResult = await server.createBuilderSession(definition.id);
   if (!sessionResult.ok) throw new Error('setup failed');
-  await server.send(sessionResult.value.id, `${mockSentinels.toolUsePrefix}lookup`, callerContextFactory());
+  await server.send(sessionResult.value.id, `${mockSentinels.toolUsePrefix}lookup`, authenticatedActorFactory(server));
   return { server, sessionId: sessionResult.value.id };
 }
 
@@ -26,7 +26,7 @@ async function buildSessionThatStaysRunningAfterDrain() {
   controls.forceNextSessionToStayRunningAfterDrain();
   const sessionResult = await server.createBuilderSession(definition.id);
   if (!sessionResult.ok) throw new Error('setup failed');
-  await server.send(sessionResult.value.id, `${mockSentinels.toolUsePrefix}lookup`, callerContextFactory());
+  await server.send(sessionResult.value.id, `${mockSentinels.toolUsePrefix}lookup`, authenticatedActorFactory(server));
   return { server, sessionId: sessionResult.value.id };
 }
 
@@ -34,10 +34,10 @@ describe('drain', () => {
   it('enumerates and resolves every pending tool call, returning the session to idle', async () => {
     const { server, sessionId } = await buildParkedSession();
 
-    const result = await server.drain(sessionId, callerContextFactory());
+    const result = await server.drain(sessionId, authenticatedActorFactory(server));
     expect(result).toEqual({ ok: true, value: { status: 'idle', resolvedToolUseIds: expect.arrayContaining([expect.any(String)]) } });
 
-    const pending = await server.drain(sessionId, callerContextFactory()); // idempotent re-drain
+    const pending = await server.drain(sessionId, authenticatedActorFactory(server)); // idempotent re-drain
     expect(pending).toEqual({ ok: true, value: { status: 'idle', resolvedToolUseIds: [] } });
   });
 
@@ -47,7 +47,7 @@ describe('drain', () => {
     const sessionResult = await server.createBuilderSession(definition.id);
     if (!sessionResult.ok) throw new Error('setup failed');
 
-    const result = await server.drain(sessionResult.value.id, callerContextFactory());
+    const result = await server.drain(sessionResult.value.id, authenticatedActorFactory(server));
     expect(result).toEqual({ ok: true, value: { status: 'idle', resolvedToolUseIds: [] } });
   });
 
@@ -60,9 +60,9 @@ describe('drain', () => {
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
     const sessionResult = await server.createBuilderSession(definition.id);
     if (!sessionResult.ok) throw new Error('setup failed');
-    await server.send(sessionResult.value.id, `${mockSentinels.toolUsePrefix}lookup`, callerContextFactory());
+    await server.send(sessionResult.value.id, `${mockSentinels.toolUsePrefix}lookup`, authenticatedActorFactory(server));
 
-    const result = await server.drain(sessionResult.value.id, callerContextFactory());
+    const result = await server.drain(sessionResult.value.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.DrainFailed');
@@ -74,7 +74,7 @@ describe('drain', () => {
   it('returns a failure outcome (never a false idle) when the session remains "running" after every enumerated pending tool call is posted', async () => {
     const { server, sessionId } = await buildSessionThatStaysRunningAfterDrain();
 
-    const result = await server.drain(sessionId, callerContextFactory());
+    const result = await server.drain(sessionId, authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.DrainFailed');
@@ -85,7 +85,7 @@ describe('drain', () => {
 
   it('rejects an unknown sessionId', async () => {
     const { server } = testHarnessFactory();
-    const result = await server.drain('does_not_exist', callerContextFactory());
+    const result = await server.drain('does_not_exist', authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.SessionNotFound');
@@ -94,7 +94,7 @@ describe('drain', () => {
   // Issue #11 Tranche A: a not-found probe MUST NOT vanish from the trail.
   it('emits a not_found AuditEvent (not silence) naming the caller-asserted sessionId, with no fabricated scope', async () => {
     const { server } = testHarnessFactory();
-    await server.drain('does_not_exist', callerContextFactory());
+    await server.drain('does_not_exist', authenticatedActorFactory(server));
 
     const events = server.listAuditEvents();
     expect(events).toHaveLength(1);
@@ -104,7 +104,7 @@ describe('drain', () => {
 
   it('emits exactly one AuditEvent{ what: "drain" } scoped via the pinned AgentDefinition for an unbound (builder) session', async () => {
     const { server, sessionId } = await buildParkedSession();
-    await server.drain(sessionId, callerContextFactory());
+    await server.drain(sessionId, authenticatedActorFactory(server));
 
     const drainEvents = server.listAuditEvents().filter((e) => e.what === 'drain');
     expect(drainEvents).toHaveLength(1);
@@ -135,7 +135,7 @@ describe('drain — pinned-grant authorization (issue #9)', () => {
     const sessionResult = await server.createBuilderSession(definition.id);
     if (!sessionResult.ok) throw new Error('setup failed');
 
-    const result = await server.drain(sessionResult.value.id, callerContextFactory());
+    const result = await server.drain(sessionResult.value.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.UnauthorizedToolCall');
@@ -166,7 +166,7 @@ describe('drain — pinned-grant authorization (issue #9)', () => {
     const sessionResult = await server.createBuilderSession(definition.id);
     if (!sessionResult.ok) throw new Error('setup failed');
 
-    const result = await server.drain(sessionResult.value.id, callerContextFactory());
+    const result = await server.drain(sessionResult.value.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.UnauthorizedToolCall');
@@ -198,7 +198,7 @@ describe('drain — pinned-grant authorization (issue #9)', () => {
     const sessionResult = await server.createBuilderSession(definition.id);
     if (!sessionResult.ok) throw new Error('setup failed');
 
-    const result = await server.drain(sessionResult.value.id, callerContextFactory());
+    const result = await server.drain(sessionResult.value.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.UnauthorizedToolCall');
@@ -230,7 +230,7 @@ describe('drain — pinned-grant authorization (issue #9)', () => {
     const sessionResult = await server.createBuilderSession(definition.id);
     if (!sessionResult.ok) throw new Error('setup failed');
 
-    const result = await server.drain(sessionResult.value.id, callerContextFactory());
+    const result = await server.drain(sessionResult.value.id, authenticatedActorFactory(server));
     expect(result).toEqual({ ok: true, value: { status: 'idle', resolvedToolUseIds: ['tooluse_granted'] } });
     expect(executedToolCalls).toEqual(['tooluse_granted']);
   });
@@ -253,7 +253,7 @@ describe('drain — pinned-grant authorization (issue #9)', () => {
     await provider.sendMessage(sessionId, `${mockSentinels.toolUsePrefix}lookup`);
     await provider.sendMessage(sessionId, `${mockSentinels.toolUsePrefix}delete_everything`);
 
-    const result = await server.drain(sessionId, callerContextFactory());
+    const result = await server.drain(sessionId, authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.UnauthorizedToolCall');
@@ -285,14 +285,14 @@ describe('drain — version isolation from unpublished draft edits (issue #10)',
         tools: [{ type: 'custom', name: 'resume', description: 'Resumes a prior task.', inputSchema: {} }],
       }),
     );
-    await server.publish(definition.id, callerContextFactory());
+    await server.publish(definition.id, authenticatedActorFactory(server));
 
-    const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+    const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
     if (!conversationResult.ok) throw new Error('setup failed');
     const sessionId = conversationResult.value.currentSessionId;
 
     // Park the v1-pinned session on a pending call for the tool v1 grants.
-    await server.send(sessionId, `${mockSentinels.toolUsePrefix}resume`, callerContextFactory());
+    await server.send(sessionId, `${mockSentinels.toolUsePrefix}resume`, authenticatedActorFactory(server));
 
     // Advance the draft to v2, revoking 'resume' entirely — but never publish
     // it. The Conversation/Session above remain pinned to published v1.
@@ -300,7 +300,7 @@ describe('drain — version isolation from unpublished draft edits (issue #10)',
     if (!editResult.ok) throw new Error('setup failed');
     expect(server.getAgentDefinition(definition.id)?.tools).toEqual([]); // the live Definition genuinely changed...
 
-    const result = await server.drain(sessionId, callerContextFactory());
+    const result = await server.drain(sessionId, authenticatedActorFactory(server));
 
     // ...yet the v1-pinned session still resolves against v1's OWN grants,
     // which still include 'resume' — proving version isolation, not merely

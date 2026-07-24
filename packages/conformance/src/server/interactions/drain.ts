@@ -2,11 +2,12 @@ import type { AgentProvider } from '../../adapter/agent-provider.types';
 import type { Clock } from '../../shared/clock.types';
 import type { DomainError } from '../../shared/domain-error.types';
 import { err, type Result } from '../../shared/result';
+import type { AuthenticatedActor } from '../auth/authenticated-actor.types';
+import { authorize } from '../auth/authorize';
 import { buildAuditEvidence } from '../audit/build-audit-evidence';
 import { buildAuditWho } from '../audit/build-audit-who';
 import { emitAuditEvent } from '../audit/emit-audit-event';
 import { resolveScopeForSession } from '../audit/resolve-scope-for-session';
-import type { CallerContext } from '../caller-context.types';
 import { serverErrors } from '../server-errors';
 import { getAgentDefinitionVersion } from '../store/agent-definition-version-store';
 import type { ServerState } from '../store/server-state';
@@ -46,12 +47,21 @@ export async function drainInteraction(
   toolExecutor: ToolExecutor,
   clock: Clock,
   sessionId: string,
-  caller: CallerContext,
+  actor: AuthenticatedActor,
 ): Promise<Result<DrainOutcome, DomainError>> {
   const session = state.sessions.get(sessionId);
   if (!session) {
-    emitAuditEvent(state, clock, { who: buildAuditWho(caller), what: 'drain', outcome: 'not_found', refs: { sessionId } });
+    emitAuditEvent(state, clock, { who: buildAuditWho(state, actor), what: 'drain', outcome: 'not_found', refs: { sessionId } });
     return err(serverErrors.sessionNotFound(sessionId));
+  }
+
+  // Issue #7 Tranche A: authorize against the Session's resolved scope
+  // before enumerating or dispatching any pending tool call.
+  const scope = resolveScopeForSession(state, session);
+  const authorization = authorize(actor, scope);
+  if (!authorization.ok) {
+    emitAuditEvent(state, clock, { who: buildAuditWho(state, actor), what: 'drain', scope, outcome: 'failure', refs: { sessionId } });
+    return err(authorization.error);
   }
 
   const definitionVersion = getAgentDefinitionVersion(state, session.pinnedAgentVersion);
@@ -64,9 +74,9 @@ export async function drainInteraction(
   const outcome = await runDrainToIdle(provider, toolExecutor, definitionVersion, sessionId);
 
   emitAuditEvent(state, clock, {
-    who: buildAuditWho(caller),
+    who: buildAuditWho(state, actor),
     what: 'drain',
-    scope: resolveScopeForSession(state, session),
+    scope,
     outcome: outcome.ok ? 'success' : 'failure',
     refs: { sessionId },
     evidence: buildAuditEvidence({ agentVersionRef: session.pinnedAgentVersion }),

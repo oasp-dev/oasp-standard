@@ -1,6 +1,7 @@
 import { sessionSchema } from '@oasp/schemas';
 import { describe, expect, it } from 'vitest';
 import { agentDefinitionInputFactory } from '../../factories/agent-definition-input-factory';
+import { authenticatedActorFactory } from '../../factories/authenticated-actor-factory';
 import { testHarnessFactory } from '../../factories/test-harness-factory';
 
 describe('createUnboundSessionSetup (via ReferenceServer.createBuilderSession / createTestSession)', () => {
@@ -26,7 +27,7 @@ describe('createUnboundSessionSetup (via ReferenceServer.createBuilderSession / 
   it('createBuilderSession still pins to draftVersion even after publish (builder always tracks latest draft)', async () => {
     const { server } = testHarnessFactory();
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-    await server.publish(definition.id, { principal: { kind: 'user', id: 'user_1' } });
+    await server.publish(definition.id, authenticatedActorFactory(server));
     const result = await server.createBuilderSession(definition.id);
     if (!result.ok) throw new Error('setup failed');
     expect(result.value.pinnedAgentVersion.version).toBe(definition.draftVersion);

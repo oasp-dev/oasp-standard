@@ -27,6 +27,11 @@ src/
                    drain, stream, send, sendToolResult) over an injected
                    AgentProvider, holding Conversations/Sessions in memory,
                    emitting AuditEvents.
+  server/auth/     The authenticated-actor trust boundary (issue #7 Tranche A):
+                   authenticate() mints an AuthenticatedActor from a registered
+                   Principal (never from caller-supplied claims), and authorize()
+                   checks one against a resource's scope, honouring a delegated
+                   actor's scopePin ceiling.
   conformance/     ConformanceLevel / ConformanceSelfReport types, verifySelfReport(),
                    and the four check suites: checks/server, checks/adapter,
                    checks/client, checks/audit.
@@ -60,7 +65,21 @@ const definition = await server.createAgentDefinition({
   guardrails: [],
   scope: { level: 'workspace', id: 'workspace_1' },
 });
-await server.publish(definition.id, { principal: { kind: 'user', id: 'user_1' } });
+
+// issue #7 Tranche A: every write interaction takes a server-minted
+// AuthenticatedActor, never a bare caller-asserted { kind, id } — register
+// a Principal, then authenticate as it.
+const principal = server.registerPrincipal({
+  kind: 'user',
+  subject: 'user_1',
+  scopeMemberships: [{ level: 'workspace', id: 'workspace_1' }],
+  roles: [],
+});
+const authResult = server.authenticate({ principalId: principal.id });
+if (!authResult.ok) throw new Error(authResult.error.message);
+const actor = authResult.value;
+
+await server.publish(definition.id, actor);
 // ... createConversation, send, migrate, drain, stream, sendToolResult
 ```
 
