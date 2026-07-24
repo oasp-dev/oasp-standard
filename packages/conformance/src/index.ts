@@ -28,10 +28,15 @@ export { mockSentinels } from './mock/mock-sentinels';
 export { createReferenceServer } from './server/create-reference-server';
 export type { CreateReferenceServerOptions } from './server/create-reference-server-options.types';
 export type { ReferenceServer } from './server/reference-server.types';
-export type { CallerContext } from './server/caller-context.types';
 export type { DrainOutcome } from './server/interactions/drain.types';
 export { createEchoToolExecutor } from './server/echo-tool-executor';
 export type { ToolExecutor } from './server/tool-executor.types';
+
+// Authenticated-actor trust boundary (issue #7 Tranche A)
+export type { AuthenticatedActor, VerifiedDelegation } from './server/auth/authenticated-actor.types';
+export type { AuthenticateInput } from './server/auth/authenticate-input.types';
+export { authorize } from './server/auth/authorize';
+export type { RegisterPrincipalInput } from './server/setup/register-principal-input.types';
 
 // Conformance levels, self-report, and checks
 export type { ConformanceLevel } from './conformance/conformance-level.types';
@@ -56,6 +61,7 @@ export type { TestHarness } from './factories/test-harness-factory';
 export { agentDefinitionInputFactory } from './factories/agent-definition-input-factory';
 export { createConversationInputFactory } from './factories/create-conversation-input-factory';
 export { registerCredentialInputFactory } from './factories/register-credential-input-factory';
-export { callerContextFactory } from './factories/caller-context-factory';
+export { registerPrincipalInputFactory } from './factories/register-principal-input-factory';
+export { authenticatedActorFactory } from './factories/authenticated-actor-factory';
 export { principalRefFactory } from './factories/principal-ref-factory';
 export { scopeFactory } from './factories/scope-factory';

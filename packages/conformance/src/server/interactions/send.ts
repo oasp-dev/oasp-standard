@@ -2,12 +2,13 @@ import type { AgentProvider } from '../../adapter/agent-provider.types';
 import type { Clock } from '../../shared/clock.types';
 import type { DomainError } from '../../shared/domain-error.types';
 import { err, ok, type Result } from '../../shared/result';
+import type { AuthenticatedActor } from '../auth/authenticated-actor.types';
+import { authorize } from '../auth/authorize';
 import { buildAuditEvidence } from '../audit/build-audit-evidence';
 import { buildAuditWho } from '../audit/build-audit-who';
 import { computeContentDigest } from '../audit/compute-content-digest';
 import { emitAuditEvent } from '../audit/emit-audit-event';
 import { resolveScopeForSession } from '../audit/resolve-scope-for-session';
-import type { CallerContext } from '../caller-context.types';
 import { formatPrincipalRef } from '../format-principal-ref';
 import { serverErrors } from '../server-errors';
 import type { ServerState } from '../store/server-state';
@@ -35,13 +36,14 @@ export async function sendInteraction(
   clock: Clock,
   sessionId: string,
   content: string,
-  caller: CallerContext,
+  actor: AuthenticatedActor,
 ): Promise<Result<void, DomainError>> {
   const contentDigest = computeContentDigest(content);
+  const who = buildAuditWho(state, actor);
   const session = state.sessions.get(sessionId);
   if (!session) {
     emitAuditEvent(state, clock, {
-      who: buildAuditWho(caller),
+      who,
       what: 'send',
       outcome: 'not_found',
       refs: { sessionId },
@@ -50,12 +52,28 @@ export async function sendInteraction(
     return err(serverErrors.sessionNotFound(sessionId));
   }
 
+  // Issue #7 Tranche A: authorize against the Session's resolved scope
+  // before the current-session check or posting to the provider.
+  const scope = resolveScopeForSession(state, session);
+  const authorization = authorize(actor, scope);
+  if (!authorization.ok) {
+    emitAuditEvent(state, clock, {
+      who,
+      what: 'send',
+      scope,
+      outcome: 'failure',
+      refs: { sessionId },
+      evidence: buildAuditEvidence({ contentDigest, agentVersionRef: session.pinnedAgentVersion }),
+    });
+    return err(authorization.error);
+  }
+
   const conversationId = state.sessionConversation.get(sessionId);
   if (conversationId) {
     const conversation = state.conversations.get(conversationId);
     if (conversation && conversation.currentSessionId !== sessionId) {
       emitAuditEvent(state, clock, {
-        who: buildAuditWho(caller),
+        who,
         what: 'send',
         scope: conversation.scope,
         outcome: 'failure',
@@ -66,12 +84,12 @@ export async function sendInteraction(
     }
   }
 
-  const sendResult = await provider.sendMessage(sessionId, content, formatPrincipalRef(caller.principal));
+  const sendResult = await provider.sendMessage(sessionId, content, formatPrincipalRef(who.principal));
 
   emitAuditEvent(state, clock, {
-    who: buildAuditWho(caller),
+    who,
     what: 'send',
-    scope: resolveScopeForSession(state, session),
+    scope,
     outcome: sendResult.ok ? 'success' : 'failure',
     refs: { sessionId },
     evidence: buildAuditEvidence({ contentDigest, agentVersionRef: session.pinnedAgentVersion }),

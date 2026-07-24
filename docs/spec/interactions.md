@@ -26,6 +26,21 @@ This document is what turns those placeholders into full contracts.
 > is S2's scope ([#3](https://github.com/FieldstateNZ/oasp-standard/issues/3)).
 > Each section below only names the `what` value it produces.
 
+> **Note on authorization (forward reference):** every interaction
+> below except `createConversation` targets an existing resource by a
+> bare id; before any of the normative behaviour below runs, a server
+> **MUST** authorize the resolved (authenticated, never caller-asserted)
+> acting party against that resource's scope. `createConversation`
+> targets no pre-existing resource, so it is authorized against its own
+> caller-asserted `scope` input and the target `AgentDefinition`'s scope
+> instead. The full normative treatment — the authenticated-actor trust
+> boundary, exact-scope-match authorization, and the delegated-actor
+> `scopePin` ceiling — is
+> [`scope-and-identity.md` § The authenticated-actor trust boundary](./scope-and-identity.md#the-authenticated-actor-trust-boundary-issue-7-tranche-a).
+> This document's per-interaction sections below describe each
+> interaction's OWN behaviour once authorization has already passed;
+> they do not repeat the authorization rule.
+
 ## `publish`
 
 `POST /agent-definitions/{id}/publish`.

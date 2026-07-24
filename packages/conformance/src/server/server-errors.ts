@@ -1,3 +1,4 @@
+import type { Scope } from '@oasp/schemas';
 import type { DomainError } from '../shared/domain-error.types';
 
 /**
@@ -51,5 +52,15 @@ export const serverErrors = {
   neverPublished: (agentDefinitionId: string): DomainError => ({
     code: 'Server.NeverPublished',
     message: `AgentDefinition "${agentDefinitionId}" has never been published; a real Conversation cannot be pinned to unpublished draft content.`,
+  }),
+  /** `authenticate()` was given a `principalId` (or delegation `onBehalfOfPrincipalId`) that names no registered `Principal` — the trust boundary fails closed rather than minting an `AuthenticatedActor` for an unknown party (issue #7 Tranche A). */
+  authenticationFailed: (principalId: string): DomainError => ({
+    code: 'Server.AuthenticationFailed',
+    message: `No registered Principal found with id "${principalId}"; authentication failed.`,
+  }),
+  /** `authorize()` rejected an actor against a target `Scope` — either the actor asserted a scope selection outright (e.g. `createConversation`'s `input.scope`) or it attempted a write against a resource's own scope, and neither the actor's `scopeMemberships` (un-delegated) nor its `scopePin` (delegated) covers it. Deliberately `unauthorized`, never `notFound`: the actor is asserting a scope it is not a member of, not probing for a concealed resource — see this tranche's PR description for why that distinction is a deliberate design choice, not an oversight. */
+  unauthorized: (principalId: string, scope: Scope, reason: string): DomainError => ({
+    code: 'Server.Unauthorized',
+    message: `Principal "${principalId}" is not authorized against scope {level: "${scope.level}", id: "${scope.id}"}: ${reason}`,
   }),
 } as const;

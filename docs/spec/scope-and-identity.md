@@ -330,6 +330,98 @@ to prevent that.
 > pins or to any one profile — it applies to `onBehalfOf` + `scope`
 > wherever they appear together, per the table above.
 
+## The authenticated-actor trust boundary (issue #7 Tranche A)
+
+The sections above specify the `Principal` claims contract and the
+containment rule in the abstract; this section specifies the normative
+consequence for a server's *implementation* boundary — where the claims
+contract is asserted from, and what a server **MUST** do with it before
+letting an interaction touch anything.
+
+- A server **MUST NOT** treat a request-body-supplied `{kind, id}` (or
+  equivalent bare principal reference asserted directly by the caller)
+  as sufficient grounds to authorize a mutating interaction. A server
+  **MUST** instead resolve the acting party's claims contract —
+  `identity`, `scopeMemberships`, `roles`, and, when delegated, the
+  verified `onBehalfOf` + `scopePin` — from its own authentication/
+  session layer (a verified token, a server-side session record, an
+  mTLS client identity, or equivalent), never from a field the request
+  itself supplies unverified. The [reference implementation](../../packages/conformance/README.md)'s
+  concrete form of this is `auth/authenticate.ts`: it resolves a
+  `principalId` against its own stored `Principal` records
+  (`registerPrincipal`'s store) and mints an `AuthenticatedActor`
+  (`auth/authenticated-actor.types.ts`) from THAT record — never from
+  anything else the caller's request carries. A conformant deployment's
+  own authentication layer (OIDC token verification, session cookie
+  lookup, etc.) occupies the same role `authenticate()` does here; this
+  document does not mandate a specific transport, only that one exists
+  and that its resolved claims — not caller-supplied ones — are what
+  authorization decisions run against.
+- Every mutating interaction (`publish`, `migrate`, `drain`, `stream`,
+  `send`, `sendToolResult`, `createConversation`) **MUST** authorize the
+  resolved actor against the scope the interaction targets before any
+  side effect: for the six interactions that resolve an existing
+  resource, that resource's own `scope` (or, for a Session-targeting
+  interaction, the `scope` [`audit.md` § Scope provenance](./audit.md#scope-provenance-normative)
+  resolves for it); for `createConversation`, the caller-asserted
+  `scope` the new `Conversation` would carry, AND the target
+  `AgentDefinition`'s own `scope` — an actor cannot launch a Conversation
+  from a Definition it cannot otherwise reach, independent of what scope
+  it asserted for the Conversation itself.
+- Authorization is exact-match against
+  [Scope resolution](#scope-resolution-normative)'s equality rule
+  (`level` + `id`), never a precedence or containment-by-nesting check:
+  an un-delegated actor is authorized iff the target scope is present,
+  by exact match, in its `scopeMemberships`. A delegated actor
+  (`onBehalfOf` + `scopePin` present) is authorized iff the target scope
+  exactly equals `scopePin` — per
+  [the containment rule](#on-behalf-of-and-scope-pinning-the-containment-rule)
+  above, a server **MUST NOT** consult EITHER party's `scopeMemberships`/`roles`
+  once delegated; the pin alone is the ceiling.
+- An authorization rejection under this section **MUST** still be
+  audited — per [`audit.md`](./audit.md), the required-emission set is
+  "every invocation," not "every authorized invocation" — and **MUST
+  NOT** be reported as `outcome: 'not_found'`: the actor is asserting a
+  scope it has no standing in, not probing for a resource whose
+  existence the server should conceal. `outcome: 'failure'` (or an
+  equivalent non-`not_found`, non-`success` outcome) is the correct
+  shape.
+
+> **Scope of this tranche — reads deferred:** the normative text above
+> is scoped to the seven interactions' WRITE paths (the six
+> `AuthenticatedActor`-taking interactions plus `createConversation`).
+> It does **not** yet specify — and the [reference implementation](../../packages/conformance/README.md)'s
+> conformance suite does **not** yet prove — the equivalent containment
+> guarantee for read accessors (`getConversation`, `getSession`,
+> `listAuditEvents`, `listSessionEvents`, and so on). A server that
+> authorizes every write correctly but allows an actor to read a
+> resource outside its `scopeMemberships`/`scopePin` is not yet
+> excluded by this document. That is deliberately left to a follow-up
+> tranche (Tranche B) rather than asserted here without an executable
+> check to back it — do not read this section as already covering
+> reads.
+>
+> **Scope of this tranche — delegated write-path containment is also
+> not yet proven:** this tranche deliberately defers
+> delegation-issuance policy (verifying that the acting principal is
+> actually entitled to the `scopePin` it presents) to a named follow-up
+> — see [`authenticate.ts`](../../packages/conformance/src/server/auth/authenticate.ts)'s
+> doc comment. Until that follow-up lands, `scopePin` is accepted
+> as-asserted, unvalidated, by the reference implementation's
+> authentication seam. Because [the containment rule](#on-behalf-of-and-scope-pinning-the-containment-rule)
+> checks a delegated actor's write ONLY against its `scopePin` — by
+> design, so that neither party's `scopeMemberships` can widen it — an
+> unvalidated pin means a delegated actor's authority is bounded only by
+> whatever pin the caller supplies, not by any real relationship between
+> the acting principal and the target scope. **Server conformance to
+> this tranche MUST NOT be read as proving write-path scope containment
+> for delegated actors.** It proves containment only for direct
+> (non-delegated) actors, whose authority is genuinely bounded by their
+> own server-stored `scopeMemberships`. Closing this gap — validating
+> that the acting principal is entitled to the pin it asserts, not just
+> that the pin is well-formed — is exactly the deferred
+> delegation-issuance follow-up.
+
 ## Relationship to S1 and to AuditEvent
 
 This document is the full normative treatment

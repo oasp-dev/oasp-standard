@@ -3,10 +3,11 @@ import type { AgentProvider } from '../../adapter/agent-provider.types';
 import type { Clock } from '../../shared/clock.types';
 import type { DomainError } from '../../shared/domain-error.types';
 import { err, ok, type Result } from '../../shared/result';
+import type { AuthenticatedActor } from '../auth/authenticated-actor.types';
+import { authorize } from '../auth/authorize';
 import { buildAuditEvidence } from '../audit/build-audit-evidence';
 import { buildAuditWho } from '../audit/build-audit-who';
 import { emitAuditEvent } from '../audit/emit-audit-event';
-import type { CallerContext } from '../caller-context.types';
 import { withConversationLock } from '../conversation-lock';
 import { resolveVaultIds } from '../credential/resolve-vault-ids';
 import { serverErrors } from '../server-errors';
@@ -70,18 +71,33 @@ export async function migrateInteraction(
   toolExecutor: ToolExecutor,
   clock: Clock,
   conversationId: string,
-  caller: CallerContext,
+  actor: AuthenticatedActor,
 ): Promise<Result<Conversation, DomainError>> {
   if (!state.conversations.has(conversationId)) {
-    emitAuditEvent(state, clock, { who: buildAuditWho(caller), what: 'migrate', outcome: 'not_found', refs: { conversationId } });
+    emitAuditEvent(state, clock, { who: buildAuditWho(state, actor), what: 'migrate', outcome: 'not_found', refs: { conversationId } });
     return err(serverErrors.conversationNotFound(conversationId));
   }
 
   return withConversationLock(state, conversationId, async () => {
     const conversation = state.conversations.get(conversationId);
     if (!conversation) {
-      emitAuditEvent(state, clock, { who: buildAuditWho(caller), what: 'migrate', outcome: 'not_found', refs: { conversationId } });
+      emitAuditEvent(state, clock, { who: buildAuditWho(state, actor), what: 'migrate', outcome: 'not_found', refs: { conversationId } });
       return err(serverErrors.conversationNotFound(conversationId));
+    }
+
+    // Issue #7 Tranche A: authorize before any of the four migrate stages
+    // run — a rejected actor never mints a new Session, never touches the
+    // provider, and never advances the lineage.
+    const authorization = authorize(actor, conversation.scope);
+    if (!authorization.ok) {
+      emitAuditEvent(state, clock, {
+        who: buildAuditWho(state, actor),
+        what: 'migrate',
+        scope: conversation.scope,
+        outcome: 'failure',
+        refs: { conversationId, sessionId: conversation.currentSessionId },
+      });
+      return err(authorization.error);
     }
 
     const definition = state.agentDefinitions.get(conversation.pinnedAgentVersion.agentDefinitionId);
@@ -91,7 +107,7 @@ export async function migrateInteraction(
 
     const noOp = (): Result<Conversation, DomainError> => {
       emitAuditEvent(state, clock, {
-        who: buildAuditWho(caller),
+        who: buildAuditWho(state, actor),
         what: 'migrate',
         scope: conversation.scope,
         outcome: 'success',
@@ -116,7 +132,7 @@ export async function migrateInteraction(
     const deployment = state.deployments.get(definition.id);
     if (!deployment) {
       emitAuditEvent(state, clock, {
-        who: buildAuditWho(caller),
+        who: buildAuditWho(state, actor),
         what: 'migrate',
         scope: conversation.scope,
         outcome: 'failure',
@@ -174,7 +190,7 @@ export async function migrateInteraction(
     });
     if (!createSessionResult.ok) {
       emitAuditEvent(state, clock, {
-        who: buildAuditWho(caller),
+        who: buildAuditWho(state, actor),
         what: 'migrate',
         scope: conversation.scope,
         outcome: 'failure',
@@ -207,7 +223,7 @@ export async function migrateInteraction(
       // actually re-attached, unlike the createSession-failure branch
       // above, where no Session (and so no attachment) exists at all.
       emitAuditEvent(state, clock, {
-        who: buildAuditWho(caller),
+        who: buildAuditWho(state, actor),
         what: 'migrate',
         scope: conversation.scope,
         outcome: 'failure',
@@ -241,7 +257,7 @@ export async function migrateInteraction(
     // on a normal, full-seed migrate, per the schema's absence-is-the-sentinel
     // convention (see audit-event.ts's `degraded` field doc comment).
     emitAuditEvent(state, clock, {
-      who: buildAuditWho(caller),
+      who: buildAuditWho(state, actor),
       what: 'migrate',
       scope: updatedConversation.scope,
       outcome: 'success',

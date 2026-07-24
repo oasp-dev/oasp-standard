@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agentDefinitionInputFactory } from '../../factories/agent-definition-input-factory';
-import { callerContextFactory } from '../../factories/caller-context-factory';
+import { authenticatedActorFactory } from '../../factories/authenticated-actor-factory';
 import { createConversationInputFactory } from '../../factories/create-conversation-input-factory';
 import { registerCredentialInputFactory } from '../../factories/register-credential-input-factory';
 import { testHarnessFactory } from '../../factories/test-harness-factory';
@@ -28,18 +28,18 @@ describe('migrate — preconditions', () => {
   it('is a successful no-op when already pinned to the resolved target version', async () => {
     const { server } = testHarnessFactory();
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-    await server.publish(definition.id, callerContextFactory());
-    const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+    await server.publish(definition.id, authenticatedActorFactory(server));
+    const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
     if (!conversationResult.ok) throw new Error('setup failed');
     const before = conversationResult.value; // already pinned to publishedVersion
 
-    const result = await server.migrate(before.id, callerContextFactory());
+    const result = await server.migrate(before.id, authenticatedActorFactory(server));
     expect(result).toEqual({ ok: true, value: before });
   });
 
   it('rejects an unknown conversationId', async () => {
     const { server } = testHarnessFactory();
-    const result = await server.migrate('does_not_exist', callerContextFactory());
+    const result = await server.migrate('does_not_exist', authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.ConversationNotFound');
@@ -48,7 +48,7 @@ describe('migrate — preconditions', () => {
   // Issue #11 Tranche A: a not-found probe MUST NOT vanish from the trail.
   it('emits a not_found AuditEvent (not silence) naming the caller-asserted conversationId, with no fabricated scope', async () => {
     const { server } = testHarnessFactory();
-    await server.migrate('does_not_exist', callerContextFactory());
+    await server.migrate('does_not_exist', authenticatedActorFactory(server));
 
     const events = server.listAuditEvents();
     expect(events).toHaveLength(1);
@@ -59,13 +59,13 @@ describe('migrate — preconditions', () => {
   it('emits exactly one AuditEvent{ what: "migrate" } even for a no-op invocation', async () => {
     const { server } = testHarnessFactory();
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-    await server.publish(definition.id, callerContextFactory());
-    const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+    await server.publish(definition.id, authenticatedActorFactory(server));
+    const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
     if (!conversationResult.ok) throw new Error('setup failed');
 
     // No intervening draft edit/publish — the conversation is already pinned to the
     // resolved target version, so this is the "already at target" no-op branch.
-    await server.migrate(conversationResult.value.id, callerContextFactory());
+    await server.migrate(conversationResult.value.id, authenticatedActorFactory(server));
 
     const events = server.listAuditEvents().filter((e) => e.what === 'migrate');
     expect(events).toHaveLength(1);
@@ -95,18 +95,18 @@ async function setUpConversationReadyToMigrate() {
     }),
   );
   server.registerCredential(registerCredentialInputFactory({ mcpServerUrl: 'https://mcp.example.com/a' }));
-  await server.publish(definition.id, callerContextFactory());
+  await server.publish(definition.id, authenticatedActorFactory(server));
 
   const conversationResult = await server.createConversation(
-    createConversationInputFactory(definition.id, { resources: [{ type: 'file', fileId: 'file_shared' }] }),
+    createConversationInputFactory(server, definition.id, { resources: [{ type: 'file', fileId: 'file_shared' }] }),
   );
   if (!conversationResult.ok) throw new Error('setup failed');
 
   // Exchange one genuine turn before migrating, so the transcript has real content to seed.
-  await server.send(conversationResult.value.currentSessionId, 'hello', callerContextFactory());
+  await server.send(conversationResult.value.currentSessionId, 'hello', authenticatedActorFactory(server));
 
   await server.editAgentDefinitionDraft(definition.id);
-  await server.publish(definition.id, callerContextFactory());
+  await server.publish(definition.id, authenticatedActorFactory(server));
 
   return { server, provider, controls, definition, conversation: conversationResult.value };
 }
@@ -115,7 +115,7 @@ describe('migrate — Stage 1: mint session at target version', () => {
   it('mints a new session pinned to exactly the resolved target version (version pinning preserved)', async () => {
     const { server, definition, conversation } = await setUpConversationReadyToMigrate();
 
-    const result = await server.migrate(conversation.id, callerContextFactory());
+    const result = await server.migrate(conversation.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -128,7 +128,7 @@ describe('migrate — Stage 1: mint session at target version', () => {
     const { server, controls, conversation } = await setUpConversationReadyToMigrate();
     const before = controls.getResourceMountCount('file:file_shared');
 
-    const result = await server.migrate(conversation.id, callerContextFactory());
+    const result = await server.migrate(conversation.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(true);
 
     expect(controls.getResourceMountCount('file:file_shared')).toBe(before + 1);
@@ -142,7 +142,7 @@ describe('migrate — Stage 1: mint session at target version', () => {
     const outgoingSession = server.getSession(conversation.currentSessionId);
     expect(outgoingSession?.vaultIds).toHaveLength(1); // the credential-requiring mcp grant resolved at creation
 
-    const result = await server.migrate(conversation.id, callerContextFactory());
+    const result = await server.migrate(conversation.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const newSession = server.getSession(result.value.currentSessionId);
@@ -172,9 +172,9 @@ describe('migrate — Stage 1: mint session at target version', () => {
       }),
     );
     const credentialV1 = server.registerCredential(registerCredentialInputFactory({ mcpServerUrl: 'https://mcp.example.com/v1-only' }));
-    await server.publish(definition.id, callerContextFactory());
+    await server.publish(definition.id, authenticatedActorFactory(server));
 
-    const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+    const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
     if (!conversationResult.ok) throw new Error('setup failed');
     const outgoingSession = server.getSession(conversationResult.value.currentSessionId);
     expect(outgoingSession?.vaultIds).toEqual([credentialV1.id]);
@@ -184,7 +184,7 @@ describe('migrate — Stage 1: mint session at target version', () => {
     await server.editAgentDefinitionDraft(definition.id, {
       tools: [{ type: 'mcp', serverUrl: 'https://mcp.example.com/v2-only', label: 'V2', auth: 'credential', permissionPolicy: 'always_allow' }],
     });
-    await server.publish(definition.id, callerContextFactory());
+    await server.publish(definition.id, authenticatedActorFactory(server));
 
     // v3: a THIRD, disjoint grant — drafted but deliberately never published.
     // The migrate below targets v2 (the current publishedVersion); the LIVE
@@ -196,7 +196,7 @@ describe('migrate — Stage 1: mint session at target version', () => {
     });
     expect(server.getAgentDefinition(definition.id)?.publishedVersion).toBe(2); // v3 is drafted, not published
 
-    const result = await server.migrate(conversationResult.value.id, callerContextFactory());
+    const result = await server.migrate(conversationResult.value.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -218,23 +218,23 @@ describe('migrate — Stage 4: atomic swap + lineage append', () => {
     const { server, conversation } = await setUpConversationReadyToMigrate();
     const originalSessionId = conversation.currentSessionId;
 
-    const first = await server.migrate(conversation.id, callerContextFactory());
+    const first = await server.migrate(conversation.id, authenticatedActorFactory(server));
     if (!first.ok) throw new Error('migrate failed');
     expect(first.value.previousSessionIds).toEqual([originalSessionId]);
 
     const secondSessionId = first.value.currentSessionId;
     const definitionId = conversation.pinnedAgentVersion.agentDefinitionId;
     await server.editAgentDefinitionDraft(definitionId);
-    await server.publish(definitionId, callerContextFactory());
+    await server.publish(definitionId, authenticatedActorFactory(server));
 
-    const second = await server.migrate(conversation.id, callerContextFactory());
+    const second = await server.migrate(conversation.id, authenticatedActorFactory(server));
     if (!second.ok) throw new Error('migrate failed');
     expect(second.value.previousSessionIds).toEqual([originalSessionId, secondSessionId]);
   });
 
   it('never disturbs currentSessionId until the new session is idle: a caller only ever observes the fully-swapped state', async () => {
     const { server, conversation } = await setUpConversationReadyToMigrate();
-    const result = await server.migrate(conversation.id, callerContextFactory());
+    const result = await server.migrate(conversation.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     // getConversation returns either the pre- or fully-post-migrate state, never a partial one.
@@ -249,11 +249,11 @@ describe('migrate — Stage 4: atomic swap + lineage append', () => {
 
     // Prepare a second version bump so the second migrate (once it runs) has somewhere to go too.
     await server.editAgentDefinitionDraft(definition.id);
-    await server.publish(definition.id, callerContextFactory());
+    await server.publish(definition.id, authenticatedActorFactory(server));
 
     const [first, second] = await Promise.all([
-      server.migrate(conversation.id, callerContextFactory()),
-      server.migrate(conversation.id, callerContextFactory()),
+      server.migrate(conversation.id, authenticatedActorFactory(server)),
+      server.migrate(conversation.id, authenticatedActorFactory(server)),
     ]);
 
     expect(first.ok).toBe(true);
@@ -269,7 +269,7 @@ describe('migrate — Stage 2: transcript seeding, non-compounding, degrade-to-f
   it('seeds the new session\'s transcript from the outgoing session\'s content, without an unsolicited fresh assistant turn', async () => {
     const { server, provider, conversation } = await setUpConversationReadyToMigrate();
 
-    const result = await server.migrate(conversation.id, callerContextFactory());
+    const result = await server.migrate(conversation.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -294,22 +294,22 @@ describe('migrate — Stage 2: transcript seeding, non-compounding, degrade-to-f
   it('is non-compounding: repeated migrations with no intervening genuine turns keep a constant seed size', async () => {
     const { server, provider, conversation, definition } = await setUpConversationReadyToMigrate();
 
-    const first = await server.migrate(conversation.id, callerContextFactory());
+    const first = await server.migrate(conversation.id, authenticatedActorFactory(server));
     if (!first.ok) throw new Error('migrate failed');
     const firstSeeded = await provider.listSessionEvents(first.value.currentSessionId);
     if (!firstSeeded.ok) throw new Error('setup failed');
     const firstCount = firstSeeded.value.events.length;
 
     await server.editAgentDefinitionDraft(definition.id);
-    await server.publish(definition.id, callerContextFactory());
-    const second = await server.migrate(conversation.id, callerContextFactory());
+    await server.publish(definition.id, authenticatedActorFactory(server));
+    const second = await server.migrate(conversation.id, authenticatedActorFactory(server));
     if (!second.ok) throw new Error('migrate failed');
     const secondSeeded = await provider.listSessionEvents(second.value.currentSessionId);
     if (!secondSeeded.ok) throw new Error('setup failed');
 
     await server.editAgentDefinitionDraft(definition.id);
-    await server.publish(definition.id, callerContextFactory());
-    const third = await server.migrate(conversation.id, callerContextFactory());
+    await server.publish(definition.id, authenticatedActorFactory(server));
+    const third = await server.migrate(conversation.id, authenticatedActorFactory(server));
     if (!third.ok) throw new Error('migrate failed');
     const thirdSeeded = await provider.listSessionEvents(third.value.currentSessionId);
     if (!thirdSeeded.ok) throw new Error('setup failed');
@@ -323,7 +323,7 @@ describe('migrate — Stage 2: transcript seeding, non-compounding, degrade-to-f
     const { server, provider, controls, conversation } = await setUpConversationReadyToMigrate();
     controls.induceTranscriptFetchFailureOnce(conversation.currentSessionId);
 
-    const result = await server.migrate(conversation.id, callerContextFactory());
+    const result = await server.migrate(conversation.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -341,7 +341,7 @@ describe('migrate — Stage 2: transcript seeding, non-compounding, degrade-to-f
 describe('migrate — Stage 3: drain to idle', () => {
   it('confirms the newly minted session is idle before exposing it (baseline: no pending tool calls after a clean seed)', async () => {
     const { server, provider, conversation } = await setUpConversationReadyToMigrate();
-    const result = await server.migrate(conversation.id, callerContextFactory());
+    const result = await server.migrate(conversation.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const status = await provider.getSessionStatus(result.value.currentSessionId);
@@ -352,7 +352,7 @@ describe('migrate — Stage 3: drain to idle', () => {
     const { server, provider, controls, conversation } = await setUpConversationReadyToMigrate();
     controls.queuePendingToolCallForNextSession({ toolUseId: 'tooluse_carried', name: 'resume', input: {} });
 
-    const result = await server.migrate(conversation.id, callerContextFactory());
+    const result = await server.migrate(conversation.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -368,7 +368,7 @@ describe('migrate — Stage 3: drain to idle', () => {
     controls.queuePendingToolCallForNextSession({ toolUseId: 'tooluse_carried', name: 'resume', input: {} });
     controls.forceNextSessionToStayRunningAfterDrain();
 
-    const result = await server.migrate(conversation.id, callerContextFactory());
+    const result = await server.migrate(conversation.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.DrainFailed');
@@ -393,7 +393,7 @@ describe('migrate — Stage 3: drain to idle', () => {
     // "still running" drain failure like the sibling test above.
     controls.queuePendingToolCallForNextSession({ toolUseId: 'tooluse_unlisted', name: 'delete_everything', input: {} });
 
-    const result = await server.migrate(conversation.id, callerContextFactory());
+    const result = await server.migrate(conversation.id, authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.UnauthorizedToolCall');

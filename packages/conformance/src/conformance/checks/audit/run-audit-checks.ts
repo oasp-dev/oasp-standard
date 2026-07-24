@@ -1,12 +1,12 @@
 import { auditEventSchema, type AuditEvent } from '@oasp/schemas';
 import { agentDefinitionInputFactory } from '../../../factories/agent-definition-input-factory';
-import { callerContextFactory } from '../../../factories/caller-context-factory';
+import { authenticatedActorFactory } from '../../../factories/authenticated-actor-factory';
 import { createConversationInputFactory } from '../../../factories/create-conversation-input-factory';
 import { registerCredentialInputFactory } from '../../../factories/register-credential-input-factory';
 import { scopeFactory } from '../../../factories/scope-factory';
 import { mockSentinels } from '../../../mock/mock-sentinels';
 import { computeContentDigest } from '../../../server/audit/compute-content-digest';
-import type { CallerContext } from '../../../server/caller-context.types';
+import type { AuthenticatedActor } from '../../../server/auth/authenticated-actor.types';
 import type { ReferenceServer } from '../../../server/reference-server.types';
 import type { Result } from '../../../shared/result';
 import { failed, passed, type CheckResult } from '../../check-result.types';
@@ -17,7 +17,7 @@ const SESSION_BOUND_WHATS: readonly AuditEvent['what'][] = ['send', 'sendToolRes
 /** A bare id no scenario in this file ever mints — guaranteed to be "not found" for every one of the seven interactions' not-found scenario below (issue #11). */
 const NOT_FOUND_PROBE_ID = 'does_not_exist_audit_not_found_probe';
 
-/** Which `refs` sub-field each interaction's not-found `AuditEvent` names the caller-asserted (nonexistent) target under — see `docs/spec/audit.md` § Not-found preconditions. */
+/** Which `refs` sub-field each interaction's not-found `AuditEvent` names the actor-asserted (nonexistent) target under — see `docs/spec/audit.md` § Not-found preconditions. */
 const NOT_FOUND_REFS_FIELD: Record<AuditEvent['what'], 'definitionId' | 'conversationId' | 'sessionId'> = {
   publish: 'definitionId',
   createConversation: 'definitionId',
@@ -66,16 +66,16 @@ function findScopeProvenanceMismatches(emitted: readonly AuditEvent[], sessionId
  * provenance's fourth table row (the fallback-to-`AgentDefinition`
  * case), which the conversation-bound scenario above never touches.
  */
-async function runBuilderSessionScenario(server: ReferenceServer, definitionId: string, caller: CallerContext): Promise<Result<{ sessionId: string; emitted: readonly AuditEvent[] }, string>> {
+async function runBuilderSessionScenario(server: ReferenceServer, definitionId: string, actor: AuthenticatedActor): Promise<Result<{ sessionId: string; emitted: readonly AuditEvent[] }, string>> {
   const builderSessionResult = await server.createBuilderSession(definitionId);
   if (!builderSessionResult.ok) return { ok: false, error: builderSessionResult.error.message };
 
   const sessionId = builderSessionResult.value.id;
   const before = server.listAuditEvents().length;
-  await server.send(sessionId, `${mockSentinels.toolUsePrefix}lookup`, caller);
-  await server.drain(sessionId, caller);
-  await server.stream(sessionId, caller);
-  await server.sendToolResult(sessionId, 'irrelevant_for_this_check', {}, caller); // failure outcome is still a valid emission
+  await server.send(sessionId, `${mockSentinels.toolUsePrefix}lookup`, actor);
+  await server.drain(sessionId, actor);
+  await server.stream(sessionId, actor);
+  await server.sendToolResult(sessionId, 'irrelevant_for_this_check', {}, actor); // failure outcome is still a valid emission
 
   return { ok: true, value: { sessionId, emitted: server.listAuditEvents().slice(before) } };
 }
@@ -90,16 +90,16 @@ async function runBuilderSessionScenario(server: ReferenceServer, definitionId: 
  * enumeration probe left zero trace — the defect this scenario's checks
  * (below, in {@link runAuditChecks}) prove is closed.
  */
-async function runNotFoundScenario(server: ReferenceServer, caller: CallerContext): Promise<ReadonlyMap<AuditEvent['what'], readonly AuditEvent[]>> {
+async function runNotFoundScenario(server: ReferenceServer, actor: AuthenticatedActor): Promise<ReadonlyMap<AuditEvent['what'], readonly AuditEvent[]>> {
   const before = server.listAuditEvents().length;
 
-  await server.publish(NOT_FOUND_PROBE_ID, caller);
-  await server.createConversation(createConversationInputFactory(NOT_FOUND_PROBE_ID));
-  await server.migrate(NOT_FOUND_PROBE_ID, caller);
-  await server.drain(NOT_FOUND_PROBE_ID, caller);
-  await server.stream(NOT_FOUND_PROBE_ID, caller);
-  await server.send(NOT_FOUND_PROBE_ID, 'not-found probe content', caller);
-  await server.sendToolResult(NOT_FOUND_PROBE_ID, 'tooluse_not_found_probe', {}, caller);
+  await server.publish(NOT_FOUND_PROBE_ID, actor);
+  await server.createConversation(createConversationInputFactory(server, NOT_FOUND_PROBE_ID));
+  await server.migrate(NOT_FOUND_PROBE_ID, actor);
+  await server.drain(NOT_FOUND_PROBE_ID, actor);
+  await server.stream(NOT_FOUND_PROBE_ID, actor);
+  await server.send(NOT_FOUND_PROBE_ID, 'not-found probe content', actor);
+  await server.sendToolResult(NOT_FOUND_PROBE_ID, 'tooluse_not_found_probe', {}, actor);
 
   const byWhat = new Map<AuditEvent['what'], AuditEvent[]>();
   for (const event of server.listAuditEvents().slice(before)) {
@@ -134,7 +134,7 @@ async function runNotFoundScenario(server: ReferenceServer, caller: CallerContex
  * **Issue #11 Tranche A addition:** also drives {@link runNotFoundScenario}
  * — all seven interactions against a bare id guaranteed never to resolve —
  * and asserts each still emits exactly one `AuditEvent` with
- * `outcome: 'not_found'` naming the caller-asserted target, closing the
+ * `outcome: 'not_found'` naming the actor-asserted target, closing the
  * "failed enumeration probes leave zero trace" gap the previous suite
  * (happy paths only) could not have caught. Also asserts the two
  * action-specific `evidence` fields Tranche A adds: `send`'s
@@ -143,7 +143,12 @@ async function runNotFoundScenario(server: ReferenceServer, caller: CallerContex
  * `evidence.agentVersionRef` naming the correct pinned `AgentDefinition`.
  */
 export async function runAuditChecks(server: ReferenceServer): Promise<CheckResult[]> {
-  const caller = callerContextFactory();
+  // Issue #7 Tranche A: this scenario drives writes against BOTH the
+  // AgentDefinition's own scope (`publish`) and a deliberately distinct
+  // Conversation scope (see below) — `actor` must be a member of both, or
+  // the write-path authorization gate now landed on every interaction would
+  // reject calls this scenario needs to succeed to exercise audit provenance.
+  const actor = authenticatedActorFactory(server, { registerInput: { scopeMemberships: [scopeFactory(), scopeFactory({ id: 'workspace_conversation' })] } });
   const definition = await server.createAgentDefinition(
     agentDefinitionInputFactory({
       // The mcp grant exercises credential attachment (below); the custom
@@ -161,25 +166,25 @@ export async function runAuditChecks(server: ReferenceServer): Promise<CheckResu
   const credential = server.registerCredential(registerCredentialInputFactory({ scope: definition.scope, mcpServerUrl: CREDENTIAL_MCP_SERVER_URL }));
   const before = server.listAuditEvents().length;
 
-  await server.publish(definition.id, caller);
+  await server.publish(definition.id, actor);
   // Give the Conversation a scope id distinct from the AgentDefinition's own
   // (the factory default `workspace_1`) so the provenance rows below are
   // distinguishable by VALUE: a source-swap — stamping the definition's scope
   // where the bound Conversation's is required (or vice versa on the fallback
   // row) — is caught, not merely a wrong-but-populated stamp.
   const conversationResult = await server.createConversation(
-    createConversationInputFactory(definition.id, { scope: scopeFactory({ id: 'workspace_conversation' }) }),
+    createConversationInputFactory(server, definition.id, { scope: scopeFactory({ id: 'workspace_conversation' }), actor }),
   ); // Audited since S4 — asserted below like every other required what value.
   if (!conversationResult.ok) return [failed('audit: scenario setup', conversationResult.error.message)];
   const conversationSessionId = conversationResult.value.currentSessionId;
 
-  await server.send(conversationSessionId, `${mockSentinels.toolUsePrefix}lookup`, caller);
-  await server.drain(conversationSessionId, caller);
-  await server.stream(conversationSessionId, caller);
-  await server.sendToolResult(conversationSessionId, 'irrelevant_for_this_check', {}, caller); // failure outcome is still a valid emission
+  await server.send(conversationSessionId, `${mockSentinels.toolUsePrefix}lookup`, actor);
+  await server.drain(conversationSessionId, actor);
+  await server.stream(conversationSessionId, actor);
+  await server.sendToolResult(conversationSessionId, 'irrelevant_for_this_check', {}, actor); // failure outcome is still a valid emission
   await server.editAgentDefinitionDraft(definition.id);
-  await server.publish(definition.id, caller);
-  const migrateResult = await server.migrate(conversationResult.value.id, caller);
+  await server.publish(definition.id, actor);
+  const migrateResult = await server.migrate(conversationResult.value.id, actor);
 
   const emitted = server.listAuditEvents().slice(before);
 
@@ -292,7 +297,7 @@ export async function runAuditChecks(server: ReferenceServer): Promise<CheckResu
   // (no bound Conversation) MUST carry the pinned AgentDefinition's own scope —
   // audit.md's total five-row table's previously-unexercised fallback row.
   const fallbackName = 'audit: send/sendToolResult/drain/stream on a builder/test-session (no Conversation) carry the pinned AgentDefinition\'s scope (fallback)';
-  const builderScenario = await runBuilderSessionScenario(server, definition.id, caller);
+  const builderScenario = await runBuilderSessionScenario(server, definition.id, actor);
   if (!builderScenario.ok) {
     checks.push(failed('audit: builder-session scenario setup', builderScenario.error));
   } else {
@@ -305,10 +310,10 @@ export async function runAuditChecks(server: ReferenceServer): Promise<CheckResu
   }
 
   // Issue #11 Tranche A: a not-found precondition failure MUST still emit
-  // exactly one AuditEvent — outcome: 'not_found', naming the caller-asserted
+  // exactly one AuditEvent — outcome: 'not_found', naming the actor-asserted
   // (nonexistent) target under the relevant refs field — instead of
   // returning silently, for every one of the seven interactions.
-  const notFoundScenario = await runNotFoundScenario(server, caller);
+  const notFoundScenario = await runNotFoundScenario(server, actor);
   for (const what of requiredWhatValues) {
     const name = `audit: a not-found ${what} call still emits exactly one AuditEvent with outcome: 'not_found'`;
     const matching = notFoundScenario.get(what) ?? [];

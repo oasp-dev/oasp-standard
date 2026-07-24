@@ -3,11 +3,12 @@ import type { AgentProvider } from '../../adapter/agent-provider.types';
 import type { Clock } from '../../shared/clock.types';
 import type { DomainError } from '../../shared/domain-error.types';
 import { err, ok, type Result } from '../../shared/result';
+import type { AuthenticatedActor } from '../auth/authenticated-actor.types';
+import { authorize } from '../auth/authorize';
 import { buildAuditEvidence } from '../audit/build-audit-evidence';
 import { buildAuditWho } from '../audit/build-audit-who';
 import { emitAuditEvent } from '../audit/emit-audit-event';
 import { resolveScopeForSession } from '../audit/resolve-scope-for-session';
-import type { CallerContext } from '../caller-context.types';
 import { serverErrors } from '../server-errors';
 import type { ServerState } from '../store/server-state';
 
@@ -31,18 +32,29 @@ export async function streamInteraction(
   provider: AgentProvider,
   clock: Clock,
   sessionId: string,
-  caller: CallerContext,
+  actor: AuthenticatedActor,
 ): Promise<Result<AsyncIterable<Event>, DomainError>> {
   const session = state.sessions.get(sessionId);
   if (!session) {
-    emitAuditEvent(state, clock, { who: buildAuditWho(caller), what: 'stream', outcome: 'not_found', refs: { sessionId } });
+    emitAuditEvent(state, clock, { who: buildAuditWho(state, actor), what: 'stream', outcome: 'not_found', refs: { sessionId } });
     return err(serverErrors.sessionNotFound(sessionId));
   }
 
+  // Issue #7 Tranche A: `stream` is a read path, but per this package's
+  // audit posture it is authorized like the write interactions — a caller
+  // with no standing in the Session's scope must not be able to observe
+  // its event stream either.
+  const scope = resolveScopeForSession(state, session);
+  const authorization = authorize(actor, scope);
+  if (!authorization.ok) {
+    emitAuditEvent(state, clock, { who: buildAuditWho(state, actor), what: 'stream', scope, outcome: 'failure', refs: { sessionId } });
+    return err(authorization.error);
+  }
+
   emitAuditEvent(state, clock, {
-    who: buildAuditWho(caller),
+    who: buildAuditWho(state, actor),
     what: 'stream',
-    scope: resolveScopeForSession(state, session),
+    scope,
     outcome: 'success',
     refs: { sessionId },
     evidence: buildAuditEvidence({ agentVersionRef: session.pinnedAgentVersion }),

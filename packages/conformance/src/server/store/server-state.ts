@@ -1,4 +1,4 @@
-import type { AgentDefinition, AgentDefinitionVersion, AuditEvent, Conversation, Credential, Deployment, Session } from '@oasp/schemas';
+import type { AgentDefinition, AgentDefinitionVersion, AuditEvent, Conversation, Credential, Deployment, Principal, Session } from '@oasp/schemas';
 import type { SessionContext } from '../target-version/resolve-target-version';
 
 /**
@@ -34,6 +34,15 @@ export interface ServerState {
   /** One `Deployment` per `AgentDefinition`, keyed by `agentDefinitionId` — this reference server deploys an AgentDefinition to a single fixed environment as soon as it is created (see `create-reference-server.ts`), not as a separately audited interaction. */
   readonly deployments: Map<string, Deployment>;
   readonly credentials: Map<string, Credential>;
+  /**
+   * Registered `Principal` records — the trust boundary `authenticate()`
+   * (issue #7 Tranche A) resolves a `principalId` against. This is the
+   * ONLY source `AuthenticatedActor`s are ever minted from; nothing in
+   * `server/auth/` ever builds one from caller-supplied `{kind, id}`
+   * input, which is exactly the pre-Tranche-A `CallerContext` gap this
+   * closes (see `auth/authenticated-actor.types.ts`).
+   */
+  readonly principals: Map<string, Principal>;
   readonly conversations: Map<string, Conversation>;
   readonly sessions: Map<string, Session>;
   /** Classifies every Session's purpose (builder / test-session / real), since the S0 schemas carry no such field — see `resolve-target-version.ts`. */
@@ -48,6 +57,7 @@ export interface ServerState {
     conversation: number;
     credential: number;
     audit: number;
+    principal: number;
   };
 }
 
@@ -58,12 +68,13 @@ export function createServerState(): ServerState {
     agentDefinitionVersions: new Map(),
     deployments: new Map(),
     credentials: new Map(),
+    principals: new Map(),
     conversations: new Map(),
     sessions: new Map(),
     sessionKind: new Map(),
     sessionConversation: new Map(),
     auditLog: [],
     conversationLocks: new Map(),
-    counters: { agentDefinition: 0, conversation: 0, credential: 0, audit: 0 },
+    counters: { agentDefinition: 0, conversation: 0, credential: 0, audit: 0, principal: 0 },
   };
 }

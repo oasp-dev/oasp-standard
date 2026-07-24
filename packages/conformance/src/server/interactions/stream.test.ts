@@ -1,7 +1,7 @@
 import { eventSchema } from '@oasp/schemas';
 import { describe, expect, it } from 'vitest';
 import { agentDefinitionInputFactory } from '../../factories/agent-definition-input-factory';
-import { callerContextFactory } from '../../factories/caller-context-factory';
+import { authenticatedActorFactory } from '../../factories/authenticated-actor-factory';
 import { testHarnessFactory } from '../../factories/test-harness-factory';
 
 describe('stream', () => {
@@ -10,9 +10,9 @@ describe('stream', () => {
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
     const sessionResult = await server.createBuilderSession(definition.id);
     if (!sessionResult.ok) throw new Error('setup failed');
-    await server.send(sessionResult.value.id, 'hello', callerContextFactory());
+    await server.send(sessionResult.value.id, 'hello', authenticatedActorFactory(server));
 
-    const streamResult = await server.stream(sessionResult.value.id, callerContextFactory());
+    const streamResult = await server.stream(sessionResult.value.id, authenticatedActorFactory(server));
     expect(streamResult.ok).toBe(true);
     if (!streamResult.ok) return;
 
@@ -29,7 +29,7 @@ describe('stream', () => {
 
   it('rejects an unknown sessionId', async () => {
     const { server } = testHarnessFactory();
-    const result = await server.stream('does_not_exist', callerContextFactory());
+    const result = await server.stream('does_not_exist', authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.SessionNotFound');
@@ -38,7 +38,7 @@ describe('stream', () => {
   // Issue #11 Tranche A: a not-found probe MUST NOT vanish from the trail.
   it('emits a not_found AuditEvent (not silence) naming the caller-asserted sessionId, with no fabricated scope', async () => {
     const { server } = testHarnessFactory();
-    await server.stream('does_not_exist', callerContextFactory());
+    await server.stream('does_not_exist', authenticatedActorFactory(server));
 
     const events = server.listAuditEvents();
     expect(events).toHaveLength(1);
@@ -52,8 +52,8 @@ describe('stream', () => {
     const sessionResult = await server.createBuilderSession(definition.id);
     if (!sessionResult.ok) throw new Error('setup failed');
 
-    await server.stream(sessionResult.value.id, callerContextFactory());
-    await server.stream(sessionResult.value.id, callerContextFactory());
+    await server.stream(sessionResult.value.id, authenticatedActorFactory(server));
+    await server.stream(sessionResult.value.id, authenticatedActorFactory(server));
 
     const streamEvents = server.listAuditEvents().filter((e) => e.what === 'stream');
     expect(streamEvents).toHaveLength(2);

@@ -327,7 +327,7 @@ describe('runServerChecks', () => {
             resourceType: 'Conversation',
             id: `conv_broken_${sessionResult.value.id}`,
             scope: input.scope,
-            initiatingPrincipal: input.initiatingPrincipal,
+            initiatingPrincipal: { kind: 'user', id: input.actor.principalId },
             currentSessionId: sessionResult.value.id,
             pinnedAgentVersion: sessionResult.value.pinnedAgentVersion, // == draftVersion — the violation
             previousSessionIds: [],
@@ -339,5 +339,47 @@ describe('runServerChecks', () => {
     const results = await runServerChecks(brokenServer, controls);
     const neverPublishedCheck = findCheck(results, 'never-published AgentDefinition is rejected');
     expect(neverPublishedCheck?.passed).toBe(false);
+  });
+
+  // Issue #7 Tranche A: checkWriteRejectsOutOfScopeActor must catch a server
+  // that ignores write-path authorization entirely — papering over a
+  // Server.Unauthorized rejection with a fabricated success, the same
+  // technique used above for the pre-existing tool-call-authorization check.
+  it('catches a server that ignores write-path scope authorization, reporting success for an out-of-scope actor', async () => {
+    const { server: realServer, controls } = testHarnessFactory();
+    const brokenServer: typeof realServer = {
+      ...realServer,
+      send: async (sessionId, content, actor) => {
+        const result = await realServer.send(sessionId, content, actor);
+        return result.ok || result.error.code !== 'Server.Unauthorized' ? result : { ok: true, value: undefined };
+      },
+    };
+
+    const results = await runServerChecks(brokenServer, controls);
+    const authorizationCheck = findCheck(results, 'a write against a scope the actor is not a member of');
+    expect(authorizationCheck?.passed).toBe(false);
+  });
+
+  // Issue #7 Tranche A: checkDelegatedActorCannotExceedScopePin must catch a
+  // server whose authorization, when delegated, falls back to consulting the
+  // acting principal's own scopeMemberships instead of enforcing the
+  // scopePin ceiling — exactly the widening the containment rule forbids.
+  // Simulated the same way as the check above: convert the correct
+  // rejection into a fabricated success.
+  it('catches a server whose delegated-actor authorization widens beyond the scopePin (containment rule violation)', async () => {
+    const { server: realServer, controls } = testHarnessFactory();
+    const brokenServer: typeof realServer = {
+      ...realServer,
+      publish: async (definitionId, actor) => {
+        const result = await realServer.publish(definitionId, actor);
+        if (result.ok || result.error.code !== 'Server.Unauthorized') return result;
+        const definition = realServer.getAgentDefinition(definitionId);
+        return definition ? { ok: true, value: definition } : result;
+      },
+    };
+
+    const results = await runServerChecks(brokenServer, controls);
+    const containmentCheck = findCheck(results, 'containment rule');
+    expect(containmentCheck?.passed).toBe(false);
   });
 });

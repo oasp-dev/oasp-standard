@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agentDefinitionInputFactory } from '../../factories/agent-definition-input-factory';
-import { callerContextFactory } from '../../factories/caller-context-factory';
+import { authenticatedActorFactory } from '../../factories/authenticated-actor-factory';
 import { testHarnessFactory } from '../../factories/test-harness-factory';
 import { mockSentinels } from '../../mock/mock-sentinels';
 
@@ -10,13 +10,13 @@ describe('sendToolResult', () => {
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
     const sessionResult = await server.createBuilderSession(definition.id);
     if (!sessionResult.ok) throw new Error('setup failed');
-    await server.send(sessionResult.value.id, `${mockSentinels.toolUsePrefix}lookup`, callerContextFactory());
+    await server.send(sessionResult.value.id, `${mockSentinels.toolUsePrefix}lookup`, authenticatedActorFactory(server));
 
     const pending = await provider.getPendingToolCalls(sessionResult.value.id);
     if (!pending.ok) throw new Error('setup failed');
     const toolUseId = pending.value[0]!.toolUseId;
 
-    const result = await server.sendToolResult(sessionResult.value.id, toolUseId, { output: 42 }, callerContextFactory());
+    const result = await server.sendToolResult(sessionResult.value.id, toolUseId, { output: 42 }, authenticatedActorFactory(server));
     expect(result).toEqual({ ok: true, value: undefined });
 
     const status = await provider.getSessionStatus(sessionResult.value.id);
@@ -29,7 +29,7 @@ describe('sendToolResult', () => {
     const sessionResult = await server.createBuilderSession(definition.id);
     if (!sessionResult.ok) throw new Error('setup failed');
 
-    const result = await server.sendToolResult(sessionResult.value.id, 'nonexistent', {}, callerContextFactory());
+    const result = await server.sendToolResult(sessionResult.value.id, 'nonexistent', {}, authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.AdapterFailure');
@@ -37,7 +37,7 @@ describe('sendToolResult', () => {
 
   it('rejects an unknown sessionId', async () => {
     const { server } = testHarnessFactory();
-    const result = await server.sendToolResult('does_not_exist', 'tooluse_1', {}, callerContextFactory());
+    const result = await server.sendToolResult('does_not_exist', 'tooluse_1', {}, authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.SessionNotFound');
@@ -46,7 +46,7 @@ describe('sendToolResult', () => {
   // Issue #11 Tranche A: a not-found probe MUST NOT vanish from the trail.
   it('emits a not_found AuditEvent (not silence) naming the caller-asserted sessionId, with no fabricated scope', async () => {
     const { server } = testHarnessFactory();
-    await server.sendToolResult('does_not_exist', 'tooluse_1', {}, callerContextFactory());
+    await server.sendToolResult('does_not_exist', 'tooluse_1', {}, authenticatedActorFactory(server));
 
     const events = server.listAuditEvents();
     expect(events).toHaveLength(1);
@@ -60,7 +60,7 @@ describe('sendToolResult', () => {
     const sessionResult = await server.createBuilderSession(definition.id);
     if (!sessionResult.ok) throw new Error('setup failed');
 
-    await server.sendToolResult(sessionResult.value.id, 'nonexistent', {}, callerContextFactory());
+    await server.sendToolResult(sessionResult.value.id, 'nonexistent', {}, authenticatedActorFactory(server));
 
     const events = server.listAuditEvents().filter((e) => e.what === 'sendToolResult');
     expect(events).toHaveLength(1);

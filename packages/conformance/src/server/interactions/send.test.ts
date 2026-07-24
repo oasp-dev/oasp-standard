@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agentDefinitionInputFactory } from '../../factories/agent-definition-input-factory';
-import { callerContextFactory } from '../../factories/caller-context-factory';
+import { authenticatedActorFactory } from '../../factories/authenticated-actor-factory';
 import { createConversationInputFactory } from '../../factories/create-conversation-input-factory';
 import { testHarnessFactory } from '../../factories/test-harness-factory';
 import { computeContentDigest } from '../audit/compute-content-digest';
@@ -12,7 +12,7 @@ describe('send', () => {
     const sessionResult = await server.createBuilderSession(definition.id);
     if (!sessionResult.ok) throw new Error('setup failed');
 
-    const result = await server.send(sessionResult.value.id, 'hello', callerContextFactory());
+    const result = await server.send(sessionResult.value.id, 'hello', authenticatedActorFactory(server));
     expect(result).toEqual({ ok: true, value: undefined });
   });
 
@@ -22,38 +22,38 @@ describe('send', () => {
     const testSessionResult = await server.createTestSession(definition.id);
     if (!testSessionResult.ok) throw new Error('setup failed');
 
-    const result = await server.send(testSessionResult.value.id, 'hello', callerContextFactory());
+    const result = await server.send(testSessionResult.value.id, 'hello', authenticatedActorFactory(server));
     expect(result.ok).toBe(true);
   });
 
   it('accepts send against the Conversation\'s current session', async () => {
     const { server } = testHarnessFactory();
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-    await server.publish(definition.id, callerContextFactory());
-    const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+    await server.publish(definition.id, authenticatedActorFactory(server));
+    const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
     if (!conversationResult.ok) throw new Error('setup failed');
 
-    const result = await server.send(conversationResult.value.currentSessionId, 'hello', callerContextFactory());
+    const result = await server.send(conversationResult.value.currentSessionId, 'hello', authenticatedActorFactory(server));
     expect(result.ok).toBe(true);
   });
 
   it('rejects send against a session superseded by migrate (no longer currentSessionId)', async () => {
     const { server } = testHarnessFactory();
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-    await server.publish(definition.id, callerContextFactory());
-    const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+    await server.publish(definition.id, authenticatedActorFactory(server));
+    const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
     if (!conversationResult.ok) throw new Error('setup failed');
     const originalSessionId = conversationResult.value.currentSessionId;
 
     // Advance the definition to a genuinely new published version, then migrate the
     // conversation onto it — this is what actually supersedes originalSessionId.
     await server.editAgentDefinitionDraft(definition.id);
-    await server.publish(definition.id, callerContextFactory());
-    const migrateResult = await server.migrate(conversationResult.value.id, callerContextFactory());
+    await server.publish(definition.id, authenticatedActorFactory(server));
+    const migrateResult = await server.migrate(conversationResult.value.id, authenticatedActorFactory(server));
     if (!migrateResult.ok) throw new Error('setup failed');
     expect(migrateResult.value.currentSessionId).not.toBe(originalSessionId);
 
-    const result = await server.send(originalSessionId, 'hello', callerContextFactory());
+    const result = await server.send(originalSessionId, 'hello', authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.SessionNotCurrent');
@@ -61,7 +61,7 @@ describe('send', () => {
 
   it('rejects an unknown sessionId', async () => {
     const { server } = testHarnessFactory();
-    const result = await server.send('does_not_exist', 'hello', callerContextFactory());
+    const result = await server.send('does_not_exist', 'hello', authenticatedActorFactory(server));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('Server.SessionNotFound');
@@ -72,7 +72,7 @@ describe('send', () => {
   // exists to receive it, so evidence.contentDigest is populated even here.
   it('emits a not_found AuditEvent (not silence) naming the caller-asserted sessionId, with no fabricated scope, but still carrying the content digest', async () => {
     const { server } = testHarnessFactory();
-    await server.send('does_not_exist', 'hello', callerContextFactory());
+    await server.send('does_not_exist', 'hello', authenticatedActorFactory(server));
 
     const events = server.listAuditEvents();
     expect(events).toHaveLength(1);
@@ -88,11 +88,11 @@ describe('send', () => {
   it('emits exactly one AuditEvent{ what: "send" } scoped to the Conversation when bound', async () => {
     const { server } = testHarnessFactory();
     const definition = await server.createAgentDefinition(agentDefinitionInputFactory());
-    await server.publish(definition.id, callerContextFactory());
-    const conversationResult = await server.createConversation(createConversationInputFactory(definition.id));
+    await server.publish(definition.id, authenticatedActorFactory(server));
+    const conversationResult = await server.createConversation(createConversationInputFactory(server, definition.id));
     if (!conversationResult.ok) throw new Error('setup failed');
 
-    await server.send(conversationResult.value.currentSessionId, 'hello', callerContextFactory());
+    await server.send(conversationResult.value.currentSessionId, 'hello', authenticatedActorFactory(server));
 
     const sendEvents = server.listAuditEvents().filter((e) => e.what === 'send');
     expect(sendEvents).toHaveLength(1);
