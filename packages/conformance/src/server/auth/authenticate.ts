@@ -23,9 +23,17 @@ import type { AuthenticateInput } from './authenticate-input.types';
  * grant, or a consent record). A real deployment needs that richer
  * issuance policy; inventing it here would be speculative for a tranche
  * scoped to closing the trust-boundary and write-path-authorization gaps
- * (see the handback). Once minted, `authorize.ts`'s containment rule
- * still holds regardless: `scopePin` is the ceiling no matter how the
- * delegation was issued.
+ * (see the handback). `input.delegation.scopePin` itself is likewise
+ * accepted as-asserted, unvalidated, by this seam — so a delegated
+ * `AuthenticatedActor` can carry a `scopePin` naming ANY scope, not only
+ * one the delegation is actually entitled to. `authorize.ts`'s
+ * containment rule mechanically bounds a delegated write to whatever pin
+ * is presented here, but that is not the same as bounding it to a scope
+ * the delegation was genuinely authorized for — closing that gap is
+ * exactly this deferred follow-up's job. A real deployment replaces this
+ * seam with verified-token issuance (e.g. a signed grant or session
+ * record) that itself bounds which `scopePin` values a given delegation
+ * may ever present.
  */
 export function authenticate(state: ServerState, input: AuthenticateInput): Result<AuthenticatedActor, DomainError> {
   const principal = state.principals.get(input.principalId);

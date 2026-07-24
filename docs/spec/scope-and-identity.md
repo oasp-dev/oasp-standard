@@ -400,6 +400,27 @@ letting an interaction touch anything.
 > tranche (Tranche B) rather than asserted here without an executable
 > check to back it — do not read this section as already covering
 > reads.
+>
+> **Scope of this tranche — delegated write-path containment is also
+> not yet proven:** this tranche deliberately defers
+> delegation-issuance policy (verifying that the acting principal is
+> actually entitled to the `scopePin` it presents) to a named follow-up
+> — see [`authenticate.ts`](../../packages/conformance/src/server/auth/authenticate.ts)'s
+> doc comment. Until that follow-up lands, `scopePin` is accepted
+> as-asserted, unvalidated, by the reference implementation's
+> authentication seam. Because [the containment rule](#on-behalf-of-and-scope-pinning-the-containment-rule)
+> checks a delegated actor's write ONLY against its `scopePin` — by
+> design, so that neither party's `scopeMemberships` can widen it — an
+> unvalidated pin means a delegated actor's authority is bounded only by
+> whatever pin the caller supplies, not by any real relationship between
+> the acting principal and the target scope. **Server conformance to
+> this tranche MUST NOT be read as proving write-path scope containment
+> for delegated actors.** It proves containment only for direct
+> (non-delegated) actors, whose authority is genuinely bounded by their
+> own server-stored `scopeMemberships`. Closing this gap — validating
+> that the acting principal is entitled to the pin it asserts, not just
+> that the pin is well-formed — is exactly the deferred
+> delegation-issuance follow-up.
 
 ## Relationship to S1 and to AuditEvent
 
