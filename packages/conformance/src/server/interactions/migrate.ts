@@ -9,7 +9,7 @@ import { buildAuditEvidence } from '../audit/build-audit-evidence';
 import { buildAuditWho } from '../audit/build-audit-who';
 import { emitAuditEvent } from '../audit/emit-audit-event';
 import { withConversationLock } from '../conversation-lock';
-import { resolveVaultIds } from '../credential/resolve-vault-ids';
+import { resolveCredentialBindings } from '../credential/resolve-credential-bindings';
 import { serverErrors } from '../server-errors';
 import { getAgentDefinitionVersion } from '../store/agent-definition-version-store';
 import type { ServerState } from '../store/server-state';
@@ -159,7 +159,29 @@ export async function migrateInteraction(
     // from outgoing and never read off the live, still-editable
     // `AgentDefinition` (issue #10).
     const resources = outgoingSession.resources.map((resource) => ({ ...resource }));
-    const vaultIds = resolveVaultIds(versionSnapshot, state.credentials);
+
+    // Issue #8: the Conversation's OWN scope (already authorized against
+    // `actor` above) is the effective scope a Credential must be pinned to
+    // in order to re-attach here — the same rule `createConversation`
+    // applies at initial attachment, now also enforced on every migrate.
+    const bindingResult = resolveCredentialBindings({
+      definitionVersion: versionSnapshot,
+      credentials: state.credentials,
+      effectiveScope: conversation.scope,
+      actor,
+    });
+    if (!bindingResult.ok) {
+      emitAuditEvent(state, clock, {
+        who: buildAuditWho(state, actor),
+        what: 'migrate',
+        scope: conversation.scope,
+        outcome: 'failure',
+        refs: { conversationId, sessionId: outgoingSessionId },
+        evidence: buildAuditEvidence({ agentVersionRef: target }),
+      });
+      return err(bindingResult.error);
+    }
+    const vaultIds = bindingResult.value;
 
     // Stage 2 — transcript-seed. Degrade to an empty seed on fetch failure;
     // migrate MUST NOT fail because of it. The seed is always the literal,

@@ -4,7 +4,7 @@ import type { AgentProvider } from '../../../adapter/agent-provider.types';
 import { testHarnessFactory } from '../../../factories/test-harness-factory';
 import { createMockAgentProvider } from '../../../mock/create-mock-agent-provider';
 import { createReferenceServer } from '../../../server/create-reference-server';
-import { resolveVaultIds } from '../../../server/credential/resolve-vault-ids';
+import { resolveCredentialBindings } from '../../../server/credential/resolve-credential-bindings';
 import { authorizePendingToolCall } from '../../../server/interactions/authorize-pending-tool-call';
 import { createFixedClock } from '../../../shared/fixed-clock';
 import { runServerChecks } from './run-server-checks';
@@ -258,7 +258,11 @@ describe('runServerChecks', () => {
   // instead of the target version's snapshot. Only the observability surface is
   // corrupted (same technique as the degraded-flag teeth tests above): every Session
   // read back reports vaultIds re-resolved against the live definition via the real
-  // resolveVaultIds — exactly the resolution a live-reading server would have stored.
+  // resolveCredentialBindings — exactly the resolution a live-reading server would
+  // have stored. `effectiveScope` is the live definition's own `scope` (issue #8):
+  // this harness never varies scope across versions, only `tools`, so that value is
+  // exactly what a real re-resolution would use, and keeps this test isolated to the
+  // one thing it exists to catch (live- vs. snapshot-read), not scope enforcement.
   it('catches a live-reading migrate: vaultIds resolved against the CURRENT AgentDefinition instead of the target version snapshot (the pre-#10 defect)', async () => {
     const { server: realServer, controls } = testHarnessFactory();
     const registeredCredentials = new Map<string, Credential>();
@@ -272,7 +276,13 @@ describe('runServerChecks', () => {
       getSession: (id) => {
         const session = realServer.getSession(id);
         const liveDefinition = session && realServer.getAgentDefinition(session.pinnedAgentVersion.agentDefinitionId);
-        return session && liveDefinition ? { ...session, vaultIds: [...resolveVaultIds(liveDefinition, registeredCredentials)] } : session;
+        if (!session || !liveDefinition) return session;
+        const bindingResult = resolveCredentialBindings({
+          definitionVersion: liveDefinition,
+          credentials: registeredCredentials,
+          effectiveScope: liveDefinition.scope,
+        });
+        return { ...session, vaultIds: bindingResult.ok ? [...bindingResult.value] : session.vaultIds };
       },
     };
 

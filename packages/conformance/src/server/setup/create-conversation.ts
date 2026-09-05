@@ -7,7 +7,7 @@ import { authorize } from '../auth/authorize';
 import { buildAuditEvidence } from '../audit/build-audit-evidence';
 import { buildAuditWho } from '../audit/build-audit-who';
 import { emitAuditEvent } from '../audit/emit-audit-event';
-import { resolveVaultIds } from '../credential/resolve-vault-ids';
+import { resolveCredentialBindings } from '../credential/resolve-credential-bindings';
 import { serverErrors } from '../server-errors';
 import { getAgentDefinitionVersion } from '../store/agent-definition-version-store';
 import type { ServerState } from '../store/server-state';
@@ -161,7 +161,29 @@ export async function createConversationSetup(
     throw new Error(`Invariant violated: AgentDefinition "${definition.id}" version ${pinnedAgentVersion.version} has no recorded content snapshot.`);
   }
 
-  const vaultIds = resolveVaultIds(versionSnapshot, state.credentials);
+  // Issue #8: the new Conversation's OWN scope (`input.scope`, already
+  // authorized against `input.actor` above) is the effective scope a
+  // Credential must be pinned to in order to attach here — never the
+  // target AgentDefinition's scope, which may legitimately differ (see
+  // the two separate `authorize()` calls above).
+  const bindingResult = resolveCredentialBindings({
+    definitionVersion: versionSnapshot,
+    credentials: state.credentials,
+    effectiveScope: input.scope,
+    actor: input.actor,
+  });
+  if (!bindingResult.ok) {
+    emitAuditEvent(state, clock, {
+      who,
+      what: 'createConversation',
+      scope: input.scope,
+      outcome: 'failure',
+      refs: { definitionId: definition.id },
+      evidence: buildAuditEvidence({ agentVersionRef: pinnedAgentVersion }),
+    });
+    return err(bindingResult.error);
+  }
+  const vaultIds = bindingResult.value;
   const resources = input.resources ?? [];
 
   const sessionResult = await provider.createSession({

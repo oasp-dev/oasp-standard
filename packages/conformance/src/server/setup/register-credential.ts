@@ -4,7 +4,7 @@ import type { RegisterCredentialInput } from './register-credential-input.types'
 
 /**
  * Setup helper: registers a `Credential` available for later
- * `vaultIds` resolution (see `../credential/resolve-vault-ids.ts`).
+ * `vaultIds` resolution (see `../credential/resolve-credential-bindings.ts`).
  * Not an audited interaction itself — v0's seven audited interactions
  * are `publish`, `createConversation`, `migrate`, `drain`, `stream`,
  * `send`, `sendToolResult`, and credential *registration* is not one of

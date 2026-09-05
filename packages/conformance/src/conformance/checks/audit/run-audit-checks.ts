@@ -32,13 +32,43 @@ const NOT_FOUND_REFS_FIELD: Record<AuditEvent['what'], 'definitionId' | 'convers
  * The `mcp` tool grant's `serverUrl` and the registered `Credential`'s
  * `mcpServerUrl` this scenario matches them on — per
  * `docs/spec/interactions.md` § `createConversation` / § Stage 1, a
- * `Credential` is resolved into `vaultIds` by matching these two
- * fields. Registering a real Credential (rather than leaving `tools`
- * empty, as scenarios before S4 did) is what makes `refs.credentialIds`
- * non-empty and assertable below — see
+ * `Credential` is resolved into `vaultIds` by matching `mcpServerUrl`
+ * (plus, since issue #8, scope/delegation-pin/onBehalfOf/provider — see
+ * `resolveCredentialBindings`). Registering a real Credential (rather
+ * than leaving `tools` empty, as scenarios before S4 did) is what makes
+ * `refs.credentialIds` non-empty and assertable below — see
  * `docs/spec/audit.md` § Credential attachment is audited.
+ *
+ * **Issue #8:** the Credential registered against this URL below is
+ * deliberately pinned to {@link CONVERSATION_SCOPE_ID} — the
+ * Conversation's OWN scope, not the AgentDefinition's — so it is a
+ * genuinely eligible binding and this remains the happy-path
+ * attachment scenario. The pre-#8 version of this file instead pinned
+ * it to the Definition's scope while the Conversation used a different
+ * one, and still asserted attachment — the exact cross-scope defect
+ * {@link runCrossScopeCredentialRejectionScenario} now proves is
+ * rejected, below.
  */
 const CREDENTIAL_MCP_SERVER_URL = 'https://mcp.example.com/audit-scenario';
+
+/** The Conversation's own scope id this scenario uses throughout — distinct from the AgentDefinition's own (the factory default `workspace_1`) so provenance rows are distinguishable by VALUE (see the `publish` call site below), and reused here as the scope {@link CREDENTIAL_MCP_SERVER_URL}'s Credential is legitimately pinned to. */
+const CONVERSATION_SCOPE_ID = 'workspace_conversation';
+
+/**
+ * The distinct scope a cross-scope Credential is deliberately pinned to
+ * in {@link runCrossScopeCredentialRejectionScenario} — DIFFERENT from
+ * that scenario's own Conversation scope
+ * ({@link CROSS_SCOPE_CONVERSATION_SCOPE_ID}), so the Credential is a
+ * `mcpServerUrl` match but an eligibility mismatch, exactly the
+ * cross-tenant collision issue #8 exists to reject.
+ */
+const CROSS_SCOPE_CREDENTIAL_SCOPE_ID = 'workspace_cross_scope_credential';
+
+/** The Conversation scope {@link runCrossScopeCredentialRejectionScenario} creates its Conversation at — never the scope the scenario's Credential is pinned to. */
+const CROSS_SCOPE_CONVERSATION_SCOPE_ID = 'workspace_cross_scope_target';
+
+/** The `mcp` grant's `serverUrl` {@link runCrossScopeCredentialRejectionScenario} uses — distinct from {@link CREDENTIAL_MCP_SERVER_URL} so the two scenarios' Credentials can never accidentally satisfy each other's grant. */
+const CROSS_SCOPE_MCP_SERVER_URL = 'https://mcp.example.com/audit-scenario-cross-scope';
 
 /**
  * Asserts every `what` in {@link SESSION_BOUND_WHATS} has an emitted
@@ -78,6 +108,57 @@ async function runBuilderSessionScenario(server: ReferenceServer, definitionId: 
   await server.sendToolResult(sessionId, 'irrelevant_for_this_check', {}, actor); // failure outcome is still a valid emission
 
   return { ok: true, value: { sessionId, emitted: server.listAuditEvents().slice(before) } };
+}
+
+/**
+ * Issue #8's inversion of this file's pre-#8 cross-scope scenario:
+ * registers a Credential pinned to {@link CROSS_SCOPE_CREDENTIAL_SCOPE_ID},
+ * then attempts `createConversation` for a Conversation resolving within
+ * the DIFFERENT {@link CROSS_SCOPE_CONVERSATION_SCOPE_ID} scope, against
+ * an AgentDefinition whose only tool grant requires that exact
+ * Credential's `mcpServerUrl`. Before #8, a URL-only match let this
+ * attach regardless of the scope mismatch — this scenario now asserts
+ * the opposite: `createConversation` MUST fail closed with
+ * `Server.UnresolvedCredential` (issue #8's invariant #3 — a
+ * credential-required grant with zero eligible Credentials fails the
+ * whole interaction, it does not merely omit the attachment), and the
+ * `AuditEvent` it still emits (every invocation is audited, successful
+ * or not) MUST report `outcome: 'failure'` with no `credentialIds`
+ * attached.
+ *
+ * `actor` must already carry membership in
+ * {@link CROSS_SCOPE_CONVERSATION_SCOPE_ID} (see `runAuditChecks`'s own
+ * actor registration) — otherwise this would fail earlier, at write-path
+ * scope authorization, and never actually reach credential resolution at
+ * all.
+ */
+async function runCrossScopeCredentialRejectionScenario(server: ReferenceServer, actor: AuthenticatedActor): Promise<Result<{ emitted: readonly AuditEvent[] }, string>> {
+  const definition = await server.createAgentDefinition(
+    agentDefinitionInputFactory({
+      tools: [{ type: 'mcp', serverUrl: CROSS_SCOPE_MCP_SERVER_URL, label: 'Cross-scope MCP', auth: 'credential', permissionPolicy: 'always_allow' }],
+    }),
+  );
+  server.registerCredential(
+    registerCredentialInputFactory({ scope: scopeFactory({ id: CROSS_SCOPE_CREDENTIAL_SCOPE_ID }), mcpServerUrl: CROSS_SCOPE_MCP_SERVER_URL }),
+  );
+  await server.publish(definition.id, actor);
+
+  const before = server.listAuditEvents().length;
+  const conversationResult = await server.createConversation(
+    createConversationInputFactory(server, definition.id, { scope: scopeFactory({ id: CROSS_SCOPE_CONVERSATION_SCOPE_ID }), actor }),
+  );
+  const emitted = server.listAuditEvents().slice(before);
+
+  if (conversationResult.ok) {
+    return {
+      ok: false,
+      error: "expected createConversation to reject (fail closed) a credential-required grant whose only registered Credential is pinned to a different scope, but it succeeded",
+    };
+  }
+  if (conversationResult.error.code !== 'Server.UnresolvedCredential') {
+    return { ok: false, error: `expected rejection with code 'Server.UnresolvedCredential', got '${conversationResult.error.code}': ${conversationResult.error.message}` };
+  }
+  return { ok: true, value: { emitted } };
 }
 
 /**
@@ -141,6 +222,16 @@ async function runNotFoundScenario(server: ReferenceServer, actor: Authenticated
  * `evidence.contentDigest` matches the actual posted content, and every
  * interaction that resolves a Session/Conversation carries
  * `evidence.agentVersionRef` naming the correct pinned `AgentDefinition`.
+ *
+ * **Issue #8 addition (credential binding, inverting the pre-#8
+ * behaviour):** the credential attached in the main scenario above is
+ * now pinned to the Conversation's OWN scope (not the Definition's) —
+ * genuinely eligible, so it remains a meaningful happy-path assertion —
+ * and {@link runCrossScopeCredentialRejectionScenario} additionally
+ * proves the opposite case: a Credential pinned to a scope DIFFERENT
+ * from the Conversation's now makes `createConversation` fail closed
+ * with `Server.UnresolvedCredential`, where the pre-#8 version of this
+ * file asserted that exact cross-scope attachment as correct.
  */
 export async function runAuditChecks(server: ReferenceServer): Promise<CheckResult[]> {
   // Issue #7 Tranche A: this scenario drives writes against BOTH the
@@ -148,7 +239,13 @@ export async function runAuditChecks(server: ReferenceServer): Promise<CheckResu
   // Conversation scope (see below) — `actor` must be a member of both, or
   // the write-path authorization gate now landed on every interaction would
   // reject calls this scenario needs to succeed to exercise audit provenance.
-  const actor = authenticatedActorFactory(server, { registerInput: { scopeMemberships: [scopeFactory(), scopeFactory({ id: 'workspace_conversation' })] } });
+  // Issue #8 adds a third membership, `CROSS_SCOPE_CONVERSATION_SCOPE_ID`:
+  // `runCrossScopeCredentialRejectionScenario` below needs `actor` to clear
+  // write-path scope authorization so the rejection it proves is genuinely
+  // about credential binding, not merely "actor lacked standing there at all".
+  const actor = authenticatedActorFactory(server, {
+    registerInput: { scopeMemberships: [scopeFactory(), scopeFactory({ id: CONVERSATION_SCOPE_ID }), scopeFactory({ id: CROSS_SCOPE_CONVERSATION_SCOPE_ID })] },
+  });
   const definition = await server.createAgentDefinition(
     agentDefinitionInputFactory({
       // The mcp grant exercises credential attachment (below); the custom
@@ -163,7 +260,24 @@ export async function runAuditChecks(server: ReferenceServer): Promise<CheckResu
       ],
     }),
   );
-  const credential = server.registerCredential(registerCredentialInputFactory({ scope: definition.scope, mcpServerUrl: CREDENTIAL_MCP_SERVER_URL }));
+  // Issue #8: pinned to CONVERSATION_SCOPE_ID — the Conversation's OWN
+  // scope, created just below — not the AgentDefinition's, so this is a
+  // genuinely eligible binding (see CREDENTIAL_MCP_SERVER_URL's doc comment).
+  const credential = server.registerCredential(
+    registerCredentialInputFactory({ scope: scopeFactory({ id: CONVERSATION_SCOPE_ID }), mcpServerUrl: CREDENTIAL_MCP_SERVER_URL }),
+  );
+  // A SECOND Credential for the SAME mcpServerUrl, pinned to the
+  // AgentDefinition's own scope instead — `runBuilderSessionScenario`
+  // below (§ fallback provenance) drives a builder session off this SAME
+  // `definition`, and a builder/test session's effective scope is the
+  // Definition's own (`create-unbound-session.ts`'s doc comment), not the
+  // Conversation's. Without this second, differently-scoped Credential,
+  // that unrelated scope-provenance scenario would itself start failing
+  // closed on `Server.UnresolvedCredential` — issue #8 correctly rejecting
+  // a binding this scenario never meant to exercise. Two Credentials for
+  // one URL is not ambiguous: each is eligible under a DIFFERENT
+  // effectiveScope, so exactly one is ever eligible for any given call.
+  server.registerCredential(registerCredentialInputFactory({ scope: definition.scope, mcpServerUrl: CREDENTIAL_MCP_SERVER_URL }));
   const before = server.listAuditEvents().length;
 
   await server.publish(definition.id, actor);
@@ -173,7 +287,7 @@ export async function runAuditChecks(server: ReferenceServer): Promise<CheckResu
   // where the bound Conversation's is required (or vice versa on the fallback
   // row) — is caught, not merely a wrong-but-populated stamp.
   const conversationResult = await server.createConversation(
-    createConversationInputFactory(server, definition.id, { scope: scopeFactory({ id: 'workspace_conversation' }), actor }),
+    createConversationInputFactory(server, definition.id, { scope: scopeFactory({ id: CONVERSATION_SCOPE_ID }), actor }),
   ); // Audited since S4 — asserted below like every other required what value.
   if (!conversationResult.ok) return [failed('audit: scenario setup', conversationResult.error.message)];
   const conversationSessionId = conversationResult.value.currentSessionId;
@@ -245,6 +359,27 @@ export async function runAuditChecks(server: ReferenceServer): Promise<CheckResu
       ? passed(migrateCredentialName)
       : failed(migrateCredentialName, `expected refs.credentialIds to include '${credential.id}', got ${JSON.stringify(migrateCredentialIds)}`),
   );
+
+  // Issue #8 teeth: the inverted cross-scope scenario. Before #8, a
+  // Credential pinned to the AgentDefinition's scope attached to a
+  // Conversation created in an entirely different scope (this file's own
+  // prior version asserted exactly that as a PASS). Now the opposite MUST
+  // hold: createConversation fails closed with Server.UnresolvedCredential
+  // and its AuditEvent records the failure with no credential attached.
+  const crossScopeName =
+    "audit: createConversation rejects (fails closed) a credential-required grant whose only Credential is pinned to a scope different from the Conversation's own";
+  const crossScopeScenario = await runCrossScopeCredentialRejectionScenario(server, actor);
+  if (!crossScopeScenario.ok) {
+    checks.push(failed(crossScopeName, crossScopeScenario.error));
+  } else {
+    const crossScopeEvent = crossScopeScenario.value.emitted.find((event) => event.what === 'createConversation');
+    const crossScopeOk = crossScopeEvent?.outcome === 'failure' && (crossScopeEvent.refs.credentialIds ?? []).length === 0;
+    checks.push(
+      crossScopeOk
+        ? passed(crossScopeName)
+        : failed(crossScopeName, `expected exactly one createConversation AuditEvent{outcome:'failure', refs.credentialIds: []}, got ${JSON.stringify(crossScopeEvent)}`),
+    );
+  }
 
   // Issue #11 Tranche A teeth: send's AuditEvent MUST carry
   // evidence.contentDigest matching the actual posted content — not merely

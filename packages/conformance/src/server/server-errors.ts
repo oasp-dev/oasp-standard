@@ -63,4 +63,14 @@ export const serverErrors = {
     code: 'Server.Unauthorized',
     message: `Principal "${principalId}" is not authorized against scope {level: "${scope.level}", id: "${scope.id}"}: ${reason}`,
   }),
+  /** `resolveCredentialBindings` found more than one registered `Credential` satisfying every eligibility condition (URL, scope, delegation pin, `onBehalfOf`, provider) for the same `mcp`/`auth: 'credential'` grant — issue #8's fail-closed replacement for the pre-#8 "pick the first Map-insertion-order match" behaviour. A conformant server MUST NOT resolve this by any ordering rule; the caller must register unambiguous Credentials instead. */
+  ambiguousCredentialBinding: (mcpServerUrl: string, candidateCredentialIds: readonly string[]): DomainError => ({
+    code: 'Server.AmbiguousCredentialBinding',
+    message: `MCP server "${mcpServerUrl}" matched ${candidateCredentialIds.length} eligible Credentials (${candidateCredentialIds.join(', ')}); binding is ambiguous and cannot be resolved automatically.`,
+  }),
+  /** An `mcp` tool grant declared `auth: 'credential'` but `resolveCredentialBindings` found zero registered Credentials satisfying every eligibility condition for it — issue #8's fail-closed replacement for the pre-#8 "silently skip the grant" behaviour. The interaction this grant belongs to MUST fail rather than proceed with an incomplete security posture. */
+  unresolvedCredential: (mcpServerUrl: string): DomainError => ({
+    code: 'Server.UnresolvedCredential',
+    message: `MCP server "${mcpServerUrl}" requires a Credential (auth: 'credential') but no eligible Credential was found (checked mcpServerUrl, scope, delegation pin, onBehalfOf, and provider compatibility).`,
+  }),
 } as const;
